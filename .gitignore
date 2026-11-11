@@ -3,6 +3,7 @@ config.json
 history.json
 last_track.json
 last_art.img
+stats.json
 widget.log
 *.log
 

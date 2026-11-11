@@ -35,7 +35,7 @@ import webbrowser
 import winreg
 import tkinter as tk
 from ctypes import wintypes
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 from fontTools.ttLib import TTFont
@@ -54,6 +54,7 @@ APP_DIR = (os.path.dirname(sys.executable) if FROZEN
 CONFIG_PATH = os.path.join(APP_DIR, "config.json")
 LAST_PATH = os.path.join(APP_DIR, "last_track.json")
 LAST_ART_PATH = os.path.join(APP_DIR, "last_art.img")
+STATS_PATH = os.path.join(APP_DIR, "stats.json")
 LOG_PATH = os.path.join(APP_DIR, "widget.log")
 STARTUP_VBS = os.path.join(
     os.environ.get("APPDATA", ""),
@@ -80,6 +81,7 @@ Q_ROW = 56
 Q_ROWS = 5
 Q_PAD = 10
 TOTAL_H = MAIN_H + GAP + Q_HEAD + Q_ROWS * Q_ROW + Q_PAD
+STATS_H = 270  # istatistik sekmesinin gövde yüksekliği (en fazla Q_ROWS * Q_ROW + Q_PAD)
 
 # boyut ön ayarları (DPI ölçeğinin üstüne çarpan); Ctrl + tekerlek ile ara değerler
 SIZES = (("size_s", 0.75), ("size_m", 0.85), ("size_n", 1.0), ("size_l", 1.15))
@@ -119,6 +121,15 @@ STRINGS = {
         "connect_line1": "Sıradaki şarkıları görmek için", "connect_line2": "Spotify hesabını bağla.",
         "connect_btn": "Bağla", "loading": "Yükleniyor…", "queue_empty": "Sırada şarkı yok",
         "recent_empty": "Henüz çalınan şarkı yok",
+        "tab_stats": "İstatistik", "st_today": "Bugün", "st_week": "Bu hafta",
+        "st_songs": "Şarkı · bugün", "st_top": "EN ÇOK DİNLENENLER · 7 GÜN",
+        "st_empty": "Dinledikçe burada görünecek", "dur_min": "{m} dk", "dur_hm": "{h} sa {m} dk",
+        "days": "Pt Sa Ça Pe Cu Ct Pz",
+        "m_accent": "Renk", "ac_auto": "Albüm kapağından", "ac_green": "Yeşil",
+        "ac_blue": "Mavi", "ac_purple": "Mor", "ac_pink": "Pembe", "ac_red": "Kırmızı",
+        "ac_orange": "Turuncu", "ac_teal": "Turkuaz", "ac_mono": "Gri",
+        "m_bg": "Arka plan", "bg_solid": "Düz", "bg_glass": "Cam (bulanık duvar kağıdı)",
+        "bg_clear": "Yarı şeffaf",
         "ago_now": "şimdi", "ago_min": "{n} dk önce", "ago_hour": "{n} sa önce",
         "ago_day": "{n} gün önce",
         "err_expired": "Bağlantının süresi doldu — tekrar bağla",
@@ -175,6 +186,15 @@ STRINGS = {
         "connect_line1": "Connect your Spotify account", "connect_line2": "to see what's up next.",
         "connect_btn": "Connect", "loading": "Loading…", "queue_empty": "Queue is empty",
         "recent_empty": "Nothing played yet",
+        "tab_stats": "Stats", "st_today": "Today", "st_week": "This week",
+        "st_songs": "Songs · today", "st_top": "TOP ARTISTS · 7 DAYS",
+        "st_empty": "Your listening will show up here", "dur_min": "{m} min",
+        "dur_hm": "{h}h {m}m", "days": "Mo Tu We Th Fr Sa Su",
+        "m_accent": "Color", "ac_auto": "From album art", "ac_green": "Green",
+        "ac_blue": "Blue", "ac_purple": "Purple", "ac_pink": "Pink", "ac_red": "Red",
+        "ac_orange": "Orange", "ac_teal": "Teal", "ac_mono": "Gray",
+        "m_bg": "Background", "bg_solid": "Solid", "bg_glass": "Glass (blurred wallpaper)",
+        "bg_clear": "Translucent",
         "ago_now": "now", "ago_min": "{n} min ago", "ago_hour": "{n} h ago",
         "ago_day": "{n} d ago",
         "err_expired": "Connection expired — reconnect",
@@ -233,6 +253,11 @@ def default_lang():
             else "en"
     except Exception:  # noqa: BLE001
         return "tr"
+
+
+def fmt_dur(sec):
+    m = int(sec // 60)
+    return T("dur_min", m=m) if m < 60 else T("dur_hm", h=m // 60, m=m % 60)
 
 
 def time_ago(ts):
@@ -584,6 +609,10 @@ def system_prefers_light():
 
 # ------------------------------------------------------------------ renkler
 DEFAULT_SEED = (0.39, 0.70)  # Spotify yeşili
+# sabit renk seçenekleri: (ad, (ton, doygunluk))
+ACCENTS = [("green", (0.39, 0.70)), ("blue", (0.60, 0.65)), ("purple", (0.75, 0.55)),
+           ("pink", (0.92, 0.60)), ("red", (0.0, 0.65)), ("orange", (0.07, 0.80)),
+           ("teal", (0.48, 0.60)), ("mono", (0.0, 0.0))]
 
 
 def seed_from_image(img):
@@ -1338,6 +1367,13 @@ class App:
         self.cfg.setdefault("hotkeys", True)
         self.cfg.setdefault("notify", True)
         self.cfg.setdefault("list_tab", "queue")
+        self.cfg.setdefault("accent", "auto")
+        self.cfg.setdefault("bg", "solid")
+        self.stats = self._load_stats()
+        self._stat_t = None
+        self._stat_saved = time.monotonic()
+        self._glass = {}         # bulanık duvar kağıdı önbelleği
+        self.glass_ver = 0
         global LANG
         LANG = self.cfg.setdefault("lang", default_lang())
         self.history = self._load_history()
@@ -1382,7 +1418,7 @@ class App:
         # durum
         self.light = self._is_light()
         self.seed = DEFAULT_SEED
-        self.pal = build_scheme(self.seed, self.light)
+        self.pal = self._scheme()
         self.pal_from = self.pal_to = self.pal
         self.pal_t = 1.0
         self.pal_version = 0
@@ -1788,6 +1824,7 @@ class App:
             self._on_new_art(st.get("art"))
         self.st = st
         playing = self._playing()
+        self._stat_tick(now, st, playing)
         if st.get("ok"):
             self.web.notify((st["title"], st["artist"]), playing)
             if st.get("title") and (st.get("art_changed") or self.last is None
@@ -1795,6 +1832,9 @@ class App:
                                     or now - self._last_saved > 10):
                 self._save_last(st, bool(st.get("art_changed")))
             if st.get("art_changed") and st.get("title"):
+                if not (self.history and self.history[0].get("title") == st["title"]
+                        and self.history[0].get("artist") == st["artist"]):
+                    self._stat_day()["plays"] += 1
                 self._add_history(st)
                 key = (st["title"], st["artist"])
                 if not self._seen_first:  # açılıştaki şarkı: bildirim yok
@@ -1843,7 +1883,12 @@ class App:
             light = self._is_light()
             if light != self.light:
                 self.light = light
-                self._start_palette(build_scheme(self.seed, light))
+                self._start_palette(self._scheme())
+            if self.cfg["bg"] == "glass":
+                wp = self._wallpaper_file()
+                if wp != self._glass.get("file"):
+                    self._glass.clear()
+                    self.glass_ver += 1
 
         animating = False
         # palet geçişi
@@ -1898,7 +1943,150 @@ class App:
         self._make_art()
         if img is None:
             self.seed = DEFAULT_SEED
-        self._start_palette(build_scheme(self.seed, self.light))
+        self._start_palette(self._scheme())
+
+    def _scheme(self):
+        seed = dict(ACCENTS).get(self.cfg.get("accent"), self.seed)
+        return build_scheme(seed, self.light)
+
+    # ---------------- arka plan: düz / cam / yarı şeffaf
+    @staticmethod
+    def _wallpaper_file():
+        """(yol, değişme zamanı) ya da None."""
+        buf = ctypes.create_unicode_buffer(520)
+        user32.SystemParametersInfoW(0x73, 520, buf, 0)  # SPI_GETDESKWALLPAPER
+        for p in (buf.value, os.path.join(os.environ.get("APPDATA", ""),
+                                          r"Microsoft\Windows\Themes\TranscodedWallpaper")):
+            try:
+                if p and os.path.isfile(p):
+                    return p, os.path.getmtime(p)
+            except OSError:
+                pass
+        return None
+
+    def _glass_bg(self):
+        """Pencerenin arkasındaki duvar kağıdı parçası, bulanık (WMAX x HMAX, RGB)."""
+        g = self._glass
+        wx, wy = self._win_pos()
+        mi = monitor_info(self.hwnd).rcMonitor
+        mkey = (mi.left, mi.top, mi.right, mi.bottom)
+        if g.get("mon") != mkey or "small" not in g:
+            g.clear()
+            g["file"] = wp = self._wallpaper_file()
+            g["mon"] = mkey
+            g["small"] = None
+            if wp:
+                try:
+                    from PIL import ImageFilter
+                    src = Image.open(wp[0]).convert("RGB")
+                    mw, mh = mkey[2] - mkey[0], mkey[3] - mkey[1]
+                    style = "10"
+                    try:
+                        with winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                                            r"Control Panel\Desktop") as k:
+                            style = str(winreg.QueryValueEx(k, "WallpaperStyle")[0])
+                    except OSError:
+                        pass
+                    if style == "2":  # uzat
+                        full = src.resize((mw // 4, mh // 4), Image.Resampling.BILINEAR)
+                    else:  # doldur (varsayılan): kırparak kapla
+                        sc = max(mw / src.width, mh / src.height) / 4
+                        tmp = src.resize((max(1, round(src.width * sc)),
+                                          max(1, round(src.height * sc))),
+                                         Image.Resampling.BILINEAR)
+                        ox, oy = (tmp.width - mw // 4) // 2, (tmp.height - mh // 4) // 2
+                        full = tmp.crop((ox, oy, ox + mw // 4, oy + mh // 4))
+                    g["small"] = full.filter(ImageFilter.GaussianBlur(9))
+                except Exception as e:  # noqa: BLE001
+                    log("duvar kağıdı okunamadı:", repr(e))
+        small = g["small"]
+        if small is None:
+            return None
+        key = (wx, wy, self.WMAX, self.HMAX)
+        if g.get("crop_key") != key:
+            rx, ry = (wx - mkey[0]) / 4, (wy - mkey[1]) / 4
+            g["crop"] = small.crop((round(rx), round(ry), round(rx + self.WMAX / 4) + 1,
+                                    round(ry + self.HMAX / 4) + 1)).resize(
+                (self.WMAX + 4, self.HMAX + 4), Image.Resampling.BILINEAR).crop(
+                (0, 0, self.WMAX, self.HMAX))
+            g["crop_key"] = key
+        return g["crop"]
+
+    def _card(self, img, x0, y0, x1, y1, r):
+        """Kart zemini (fiziksel piksel), seçili arka plan stiline göre."""
+        P, mode = self.pal, self.cfg["bg"]
+        if mode == "clear":
+            rr(img, x0, y0, x1, y1, r, P["surface"], alpha=150)
+            return
+        if mode == "glass":
+            bg = self._glass_bg()
+            if bg is not None:
+                ix0, iy0 = int(math.floor(x0)), int(math.floor(y0))
+                ix1, iy1 = int(math.ceil(x1)), int(math.ceil(y1))
+                w, h = ix1 - ix0, iy1 - iy0
+                part = bg.crop((ix0, iy0, ix1, iy1))
+                part = Image.blend(part, Image.new("RGB", part.size, P["surface"]),
+                                   0.5 if self.light else 0.58)
+                layer = part.convert("RGBA")
+                layer.putalpha(_rr_mask(w, h, x0 - ix0, y0 - iy0, x1 - ix0, y1 - iy0,
+                                        max(0.0, min(r, (x1 - x0) / 2, (y1 - y0) / 2))))
+                img.alpha_composite(layer, (ix0, iy0))
+                return
+        rr(img, x0, y0, x1, y1, r, P["surface"])
+
+    # ---------------- dinleme istatistikleri
+    def _load_stats(self):
+        try:
+            with open(STATS_PATH, "r", encoding="utf-8") as f:
+                s = json.load(f)
+            if isinstance(s.get("days"), dict):
+                return s
+        except Exception:  # noqa: BLE001
+            pass
+        return {"days": {}}
+
+    def _save_stats(self):
+        days = self.stats["days"]
+        cutoff = (date.today() - timedelta(days=60)).isoformat()
+        for k in [k for k in days if k < cutoff]:
+            del days[k]
+        try:
+            with open(STATS_PATH, "w", encoding="utf-8") as f:
+                json.dump(self.stats, f, ensure_ascii=False)
+        except Exception as e:  # noqa: BLE001
+            log("istatistik kaydedilemedi:", repr(e))
+        self._stat_saved = time.monotonic()
+
+    def _stat_day(self):
+        return self.stats["days"].setdefault(date.today().isoformat(),
+                                             {"sec": 0.0, "plays": 0, "artists": {}})
+
+    def _stat_tick(self, now, st, playing):
+        prev, self._stat_t = self._stat_t, now
+        if prev is None or not (playing and st.get("ok")):
+            return
+        delta = now - prev
+        if not 0 < delta < 5:  # uyku / donma sonrası büyük boşlukları sayma
+            return
+        d = self._stat_day()
+        d["sec"] += delta
+        artist = (st.get("artist") or "").split(", ")[0].strip() or T("unknown")
+        d["artists"][artist] = d["artists"].get(artist, 0.0) + delta
+        if now - self._stat_saved > 30:
+            self._save_stats()
+
+    def _stats_summary(self):
+        days = self.stats["days"]
+        today = date.today()
+        week = [today - timedelta(days=i) for i in range(6, -1, -1)]
+        per_day = [days.get(d.isoformat(), {}).get("sec", 0.0) for d in week]
+        artists = {}
+        for d in week:
+            for a, s in days.get(d.isoformat(), {}).get("artists", {}).items():
+                artists[a] = artists.get(a, 0.0) + s
+        top = sorted(artists.items(), key=lambda kv: -kv[1])[:3]
+        return {"today": per_day[-1], "week": sum(per_day), "days": list(zip(week, per_day)),
+                "plays": days.get(today.isoformat(), {}).get("plays", 0), "top": top}
 
     # ---------------- çizim
     def _render_all(self):
@@ -1912,7 +2100,9 @@ class App:
                self.S, self.cfg["queue_rows"], self.mini, self._vol_shown(),
                self._sleep_minutes(), LANG, self.cfg["list_tab"], len(self.history),
                self.history[0].get("t") if self.history else None,
-               int(time.time() // 60) if self.cfg["list_tab"] == "recent" else 0)
+               int(time.time() // 60) if self.cfg["list_tab"] != "queue" else 0,
+               self.cfg["accent"], self.cfg["bg"], self.glass_ver,
+               self._win_pos() if self.cfg["bg"] == "glass" else None)
         full = False
         if key != self.base_key:
             self.base_key = key
@@ -2043,7 +2233,7 @@ class App:
         playing = self._playing()
         hov = self.hover
 
-        rr(img, 0, 0, X(W), X(MINI_H), X(MINI_H / 2), P["surface"])
+        self._card(img, 0, 0, X(W), X(MINI_H), X(MINI_H / 2))
         # kapak
         ax = ay = 12
         if self.art_mini is not None:
@@ -2129,7 +2319,7 @@ class App:
                    anchor="mm")
 
         # ana kart
-        rr(img, 0, 0, X(W), X(MAIN_H), X(28), P["surface"])
+        self._card(img, 0, 0, X(W), X(MAIN_H), X(28))
 
         # kapak
         ax, ay, asz = 16, 16, 120
@@ -2277,7 +2467,9 @@ class App:
 
         # gösterilecek satırlar: (ad, alt yazı, küçük kapak, sağdaki metin)
         items, message, need_connect = None, None, False
-        if tab == "recent":
+        if tab == "stats":
+            pass
+        elif tab == "recent":
             items = [(h["title"], h["artist"], self._hist_thumb(h), time_ago(h.get("t", 0)))
                      for h in self._recent_items(rows)]
             if not items:
@@ -2293,20 +2485,23 @@ class App:
 
         if collapsed:
             body = 0
+        elif tab == "stats":
+            body = STATS_H
         elif need_connect:
             body = 86
         elif items:
             body = len(items) * Q_ROW + Q_PAD
         else:
             body = 64
-        rr(img, 0, X(y0), X(W), X(y0 + Q_HEAD + body), X(28), P["surface"])
+        self._card(img, 0, X(y0), X(W), X(y0 + Q_HEAD + body), X(28))
         self.content_h = y0 + Q_HEAD + body
 
         # başlık: sekmeler + daralt
         hy = y0 + Q_HEAD / 2
         x = 12
-        for key, lbl in (("queue", T("tab_queue")), ("recent", T("tab_recent"))):
-            w = F["btn"].getlength(lbl) / S + 26
+        for key, lbl in (("queue", T("tab_queue")), ("recent", T("tab_recent")),
+                         ("stats", T("tab_stats"))):
+            w = F["btn"].getlength(lbl) / S + 22
             hid = "tab_" + key
             if tab == key:
                 rr(img, X(x), X(hy - 16), X(x + w), X(hy + 16), X(16), P["secondary_container"])
@@ -2329,6 +2524,9 @@ class App:
 
         top = y0 + Q_HEAD
         if collapsed:
+            return
+        if tab == "stats":
+            self._render_stats(img, d, top)
             return
         if need_connect:
             d.text((X(22), X(top + 4)), T("connect_line1"), font=F["body"],
@@ -2374,6 +2572,71 @@ class App:
                 d.text((X(W - 24), X(cy)), right, font=F["qsub"],
                        fill=P["on_surface_variant"] + (255,), anchor="rm")
             hits.append((hid, 8, ry, W - 8, ry + Q_ROW))
+
+    def _render_stats(self, img, d, top):
+        S, P, F = self.S, self.pal, self.F
+        X = lambda v: v * S  # noqa: E731
+        sm = self._stats_summary()
+        solid = self.cfg["bg"] == "solid"
+
+        def tile(x0, y0, x1, y1, r):
+            if solid:
+                rr(img, X(x0), X(y0), X(x1), X(y1), X(r), P["surface_high"])
+            else:
+                rr(img, X(x0), X(y0), X(x1), X(y1), X(r), P["on_surface"], alpha=22)
+
+        # özet kutuları
+        gap, x0 = 8, 16
+        tw = (W - 32 - 2 * gap) / 3
+        for i, (val, lbl) in enumerate(((fmt_dur(sm["today"]), T("st_today")),
+                                        (fmt_dur(sm["week"]), T("st_week")),
+                                        (str(sm["plays"]), T("st_songs")))):
+            tx = x0 + i * (tw + gap)
+            tile(tx, top, tx + tw, top + 54, 16)
+            d.text((X(tx + 12), X(top + 20)), fit_text(val, F["qhead"], X(tw - 20)),
+                   font=F["qhead"], fill=(P["primary"] if i == 0 else P["on_surface"]) + (255,),
+                   anchor="lm")
+            d.text((X(tx + 12), X(top + 39)), fit_text(lbl, F["qsub"], X(tw - 20)),
+                   font=F["qsub"], fill=P["on_surface_variant"] + (255,), anchor="lm")
+
+        # son 7 gün
+        by0, by1 = top + 70, top + 126
+        cw = (W - 32) / 7
+        mx = max([s for _d, s in sm["days"]] + [1.0])
+        names = T("days").split()
+        for i, (day, sec) in enumerate(sm["days"]):
+            cx = 16 + cw * (i + 0.5)
+            today = i == 6
+            rr(img, X(cx - 11), X(by0), X(cx + 11), X(by1), X(8), P["on_surface"], alpha=16)
+            if sec > 0:
+                h = max(8.0, (by1 - by0) * sec / mx)
+                rr(img, X(cx - 11), X(by1 - h), X(cx + 11), X(by1), X(8), P["primary"],
+                   alpha=255 if today else 130)
+            d.text((X(cx), X(by1 + 14)), names[day.weekday()], font=F["qsub"],
+                   fill=(P["primary"] if today else P["on_surface_variant"]) + (255,),
+                   anchor="mm")
+
+        # en çok dinlenen sanatçılar
+        hy = top + 168
+        d.text((X(20), X(hy)), T("st_top"), font=F["status"], fill=P["primary"] + (255,),
+               anchor="lm")
+        if not sm["top"]:
+            d.text((X(20), X(hy + 28)), T("st_empty"), font=F["body"],
+                   fill=P["on_surface_variant"] + (255,), anchor="lm")
+            return
+        best = sm["top"][0][1] or 1.0
+        for i, (name, sec) in enumerate(sm["top"]):
+            ry = hy + 22 + i * 26
+            dur = fmt_dur(sec)
+            dw = F["qsub"].getlength(dur)
+            d.text((X(20), X(ry)), fit_text(name, F["qtitle"], X(W - 40) - dw - X(12)),
+                   font=F["qtitle"], fill=P["on_surface"] + (255,), anchor="lm")
+            d.text((X(W - 20), X(ry)), dur, font=F["qsub"],
+                   fill=P["on_surface_variant"] + (255,), anchor="rm")
+            rr(img, X(20), X(ry + 13), X(W - 20), X(ry + 16), X(1.5), P["on_surface"],
+               alpha=16)
+            rr(img, X(20), X(ry + 13), X(20 + (W - 40) * sec / best), X(ry + 16), X(1.5),
+               P["primary"], alpha=200)
 
     def _queue_thumb(self, url):
         if not url:
@@ -2570,7 +2833,7 @@ class App:
         elif a == "qcollapse":
             self.cfg["queue_collapsed"] = not self.cfg["queue_collapsed"]
             self.cfg.save()
-        elif a in ("tab_queue", "tab_recent"):
+        elif a in ("tab_queue", "tab_recent", "tab_stats"):
             self.cfg["list_tab"] = a[4:]
             self.cfg["queue_collapsed"] = False
             self.cfg.save()
@@ -2619,6 +2882,21 @@ class App:
         for k, val in (("th_system", "system"), ("th_dark", "dark"), ("th_light", "light")):
             th.add_radiobutton(label=T(k), value=val, variable=self.v_theme,
                                command=self._set_theme)
+        th.add_separator()
+        self.v_accent = tk.StringVar(value=c["accent"])
+        ac = tk.Menu(th, tearoff=0)
+        for val in ["auto"] + [n for n, _s in ACCENTS]:
+            ac.add_radiobutton(label=T("ac_" + val), value=val, variable=self.v_accent,
+                               command=self._set_accent)
+            if val == "auto":
+                ac.add_separator()
+        th.add_cascade(label=T("m_accent"), menu=ac)
+        self.v_bg = tk.StringVar(value=c["bg"])
+        bgm = tk.Menu(th, tearoff=0)
+        for val in ("solid", "glass", "clear"):
+            bgm.add_radiobutton(label=T("bg_" + val), value=val, variable=self.v_bg,
+                                command=lambda: self._set("bg", self.v_bg.get()))
+        th.add_cascade(label=T("m_bg"), menu=bgm)
         m.add_cascade(label=T("m_theme"), menu=th)
         self.v_scale = tk.DoubleVar(value=float(c["scale"]))
         sz = sub()
@@ -2721,7 +2999,11 @@ class App:
     def _set_theme(self):
         self._set("theme", self.v_theme.get())
         self.light = self._is_light()
-        self._start_palette(build_scheme(self.seed, self.light))
+        self._start_palette(self._scheme())
+
+    def _set_accent(self):
+        self._set("accent", self.v_accent.get())
+        self._start_palette(self._scheme())
 
     def _set_opacity(self):
         self._set("opacity", self.v_opacity.get())
@@ -2749,6 +3031,7 @@ class App:
 
     def run(self):
         self.root.mainloop()
+        self._save_stats()
 
 
 # ------------------------------------------------------------------ bildirim baloncuğu
