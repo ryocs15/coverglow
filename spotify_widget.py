@@ -1143,12 +1143,15 @@ class SpotifyWeb:
 
     def _library(self, tid, method):
         """Kütüphane uç noktası; eskisi kaldırılmışsa yeni URI tabanlı uç noktayı dener."""
-        try:
-            path = "/me/tracks/contains?ids=" if method == "CHECK" else "/me/tracks?ids="
-            return self._api(path + tid, "GET" if method == "CHECK" else method)
-        except urllib.error.HTTPError as e:
-            if e.code not in (404, 410):
-                raise
+        if not getattr(self, "_lib_new", False):
+            try:
+                path = "/me/tracks/contains?ids=" if method == "CHECK" else "/me/tracks?ids="
+                return self._api(path + tid, "GET" if method == "CHECK" else method)
+            except urllib.error.HTTPError as e:
+                # Spotify eski uç noktayı kapattı (403/404/410): yenisine geç ve hatırla
+                if e.code not in (403, 404, 410):
+                    raise
+                self._lib_new = True
         uri = urllib.parse.quote("spotify:track:" + tid)
         path = "/me/library/contains?uris=" if method == "CHECK" else "/me/library?uris="
         return self._api(path + uri, "GET" if method == "CHECK" else method)
