@@ -1,0 +1,13 @@
+# Kişisel veriler (Spotify refresh token, geçmiş, son şarkı)
+config.json
+history.json
+last_track.json
+last_art.img
+widget.log
+*.log
+
+# Derleme çıktıları
+build/
+dist/
+__pycache__/
+*.pyc
