@@ -276,6 +276,7 @@ WS_EX_LAYERED = 0x00080000
 WS_EX_TOOLWINDOW = 0x00000080
 WS_EX_NOACTIVATE = 0x08000000
 WS_EX_APPWINDOW = 0x00040000
+WS_EX_TRANSPARENT = 0x00000020
 SWP_NOSIZE, SWP_NOMOVE, SWP_NOACTIVATE = 0x1, 0x2, 0x10
 HWND_BOTTOM, HWND_TOPMOST, HWND_NOTOPMOST = 1, -1, -2
 ULW_ALPHA = 2
@@ -398,6 +399,52 @@ class LayeredSurface:
             if not self._warned:
                 log("UpdateLayeredWindowIndirect başarısız:", ctypes.GetLastError())
                 self._warned = True
+
+
+class MONITORINFO(ctypes.Structure):
+    _fields_ = [("cbSize", wintypes.DWORD), ("rcMonitor", wintypes.RECT),
+                ("rcWork", wintypes.RECT), ("dwFlags", wintypes.DWORD)]
+
+
+user32.GetForegroundWindow.restype = wintypes.HWND
+user32.MonitorFromWindow.restype = ctypes.c_void_p
+user32.MonitorFromWindow.argtypes = [wintypes.HWND, wintypes.DWORD]
+user32.GetMonitorInfoW.argtypes = [ctypes.c_void_p, ctypes.POINTER(MONITORINFO)]
+_SHELL_CLASSES = {"Progman", "WorkerW", "Shell_TrayWnd", "Shell_SecondaryTrayWnd"}
+
+
+def monitor_info(hwnd):
+    mi = MONITORINFO()
+    mi.cbSize = ctypes.sizeof(MONITORINFO)
+    user32.GetMonitorInfoW(user32.MonitorFromWindow(hwnd, 2), ctypes.byref(mi))  # NEAREST
+    return mi
+
+
+def fullscreen_app(own=()):
+    """Ön plandaki pencere bir monitörü tamamen kaplıyorsa (oyun, video, sunum)
+    o monitörün dikdörtgenini döndürür; değilse None."""
+    try:
+        state = ctypes.c_int(0)
+        ctypes.windll.shell32.SHQueryUserNotificationState(ctypes.byref(state))
+        hwnd = user32.GetForegroundWindow()
+        if not hwnd or hwnd in own:
+            return None
+        cls = ctypes.create_unicode_buffer(64)
+        user32.GetClassNameW(hwnd, cls, 64)
+        if cls.value in _SHELL_CLASSES:
+            return None
+        mi = monitor_info(hwnd)
+        m = mi.rcMonitor
+        if state.value == 3:  # QUNS_RUNNING_D3D_FULL_SCREEN (özel tam ekran)
+            return m
+        rc = wintypes.RECT()
+        user32.GetWindowRect(hwnd, ctypes.byref(rc))
+        if rc.left <= m.left and rc.top <= m.top and rc.right >= m.right \
+                and rc.bottom >= m.bottom:
+            return m
+    except Exception:
+        pass
+    return None
 
 
 def set_window_styles(hwnd):
@@ -1755,9 +1802,10 @@ class App:
                     self._toast_key = key
                 elif key != self._toast_key:
                     self._toast_key = key
-                    if self.cfg["notify"] and self.cfg["mode"] == "desktop" \
-                            and not self.inside:
-                        self.toast.show(st)
+                    fs = fullscreen_app((self.hwnd, self.toast.hwnd))
+                    if self.cfg["notify"] and (fs is not None or (
+                            self.cfg["mode"] == "desktop" and not self.inside)):
+                        self.toast.show(st, fs)
 
         # klavye kısayolları
         while self.hk_queue:
@@ -2720,8 +2768,12 @@ class Toast:
         t.update()
         self.hwnd = user32.GetAncestor(t.winfo_id(), 2)
         set_window_styles(self.hwnd)
+        # sahipsiz pencere: masaüstüne iliştirilmiş ana pencereye bağlı kalmasın
+        user32.SetWindowLongPtrW(self.hwnd, GWLP_HWNDPARENT, 0)
         self.surface = LayeredSurface(self.hwnd, self.WM, self.HM)
         self.surface.alpha = 0
+        self.fs = False
+        self._hold_until = 0.0
         self.surface.full(Image.new("RGBA", (self.WM, self.HM), (0, 0, 0, 0)))
         t.bind("<Button-1>", lambda _e: self.hide())
         self._job = None
@@ -2753,13 +2805,23 @@ class Toast:
                font=F["album"], fill=P["on_surface_variant"] + (255,), anchor="lm")
         return img
 
-    def show(self, st):
+    def show(self, st, fs=None):
+        """fs: tam ekran uygulamanın monitörü (varsa bildirim onun üstünde, sağ üstte çıkar
+        ve tıklamaları oyuna geçirir)."""
         S = self.app.S
+        self.fs = fs is not None
+        ex = user32.GetWindowLongPtrW(self.hwnd, GWL_EXSTYLE)
+        ex = (ex | WS_EX_TRANSPARENT) if self.fs else (ex & ~WS_EX_TRANSPARENT)
+        user32.SetWindowLongPtrW(self.hwnd, GWL_EXSTYLE, ex)
         self.surface.full(self._render(st))
-        rc = wintypes.RECT()
-        user32.SystemParametersInfoW(0x30, 0, ctypes.byref(rc), 0)  # SPI_GETWORKAREA
         m = round(16 * S)
-        self._pos = (rc.right - round(self.TW * S) - m, rc.bottom - round(self.TH * S) - m)
+        if fs is not None:
+            self._pos = (fs.right - round(self.TW * S) - m, fs.top + m + round(8 * S))
+        else:
+            rc = wintypes.RECT()
+            user32.SystemParametersInfoW(0x30, 0, ctypes.byref(rc), 0)  # SPI_GETWORKAREA
+            self._pos = (rc.right - round(self.TW * S) - m,
+                         rc.bottom - round(self.TH * S) - m)
         self._offset = 14 * S  # aşağıdan yukarı kayarak gelir
         user32.SetWindowPos(self.hwnd, HWND_TOPMOST, self._pos[0],
                             self._pos[1] + int(self._offset), 0, 0,
@@ -2785,15 +2847,27 @@ class Toast:
         self.surface.alpha = nxt
         if target > 0:
             self._offset *= 0.7
-            user32.SetWindowPos(self.hwnd, 0, self._pos[0], self._pos[1] + int(self._offset),
-                                0, 0, SWP_NOSIZE | SWP_NOACTIVATE | 0x0004)
+            # her adımda en üste yeniden yerleş (oyunlar kendini öne alabiliyor)
+            user32.SetWindowPos(self.hwnd, HWND_TOPMOST, self._pos[0],
+                                self._pos[1] + int(self._offset), 0, 0,
+                                SWP_NOSIZE | SWP_NOACTIVATE)
         self.surface._commit(None)
         if nxt != target:
             self._job = self.top.after(16, self._step)
-        elif target > 0:  # bekle, sonra kaybol
-            self._job = self.top.after(self.HOLD_MS, self.hide)
+        elif target > 0:  # bekle (en üstte kalarak), sonra kaybol
+            self._hold_until = time.monotonic() + self.HOLD_MS / 1000
+            self._job = self.top.after(250, self._hold)
         else:  # gizlendi: ekran dışına al
             move_window(self.hwnd, -30000, -30000)
+
+    def _hold(self):
+        self._job = None
+        if time.monotonic() >= self._hold_until:
+            self.hide()
+            return
+        user32.SetWindowPos(self.hwnd, HWND_TOPMOST, 0, 0, 0, 0,
+                            SWP_NOSIZE | SWP_NOMOVE | SWP_NOACTIVATE)
+        self._job = self.top.after(250, self._hold)
 
 
 # ------------------------------------------------------------------ bağlantı penceresi
