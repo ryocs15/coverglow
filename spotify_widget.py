@@ -36,6 +36,8 @@ import winreg
 import tkinter as tk
 from ctypes import wintypes
 from datetime import date, datetime, timedelta, timezone
+import http.client
+import ssl
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 from fontTools.ttLib import TTFont
@@ -1287,6 +1289,39 @@ class MediaWorker:
         asyncio.run_coroutine_threadsafe(go(), self.loop)
 
 
+# ------------------------------------------------------------------ ağ: geçici hatalarda tekrar dene
+_TRANSIENT = (urllib.error.URLError, http.client.RemoteDisconnected, http.client.IncompleteRead,
+              ConnectionError, TimeoutError, ssl.SSLError)
+
+
+def is_transient(e):
+    """İnternetin anlık gidip gelmesinden kaynaklanan hata mı (tekrar denemeye değer)?"""
+    if isinstance(e, urllib.error.HTTPError):
+        return e.code in (500, 502, 503, 504)  # sunucu tarafında geçici sorun
+    return isinstance(e, _TRANSIENT)
+
+
+def http_read(req, timeout=15, tries=2, idempotent=True):
+    """İsteği gönderip gövdeyi döndürür; bağlantı koparsa / zaman aşımında kısa bir beklemeyle
+    tekrar dener. İki kez gönderilmesi sorun olan istekler (idempotent=False) sadece sunucu
+    isteği hiç almadıysa (bağlantı kurulamadı) tekrarlanır. HTTPError olduğu gibi yükseltilir."""
+    for i in range(tries):
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                return r.read()
+        except Exception as e:  # noqa: BLE001
+            retry = is_transient(e)
+            if retry and not idempotent:
+                # sadece bağlantı hiç kurulamadıysa güvenli (ör. DNS hatası, bağlantı reddi)
+                import socket
+                reason = getattr(e, "reason", None)
+                retry = not isinstance(e, urllib.error.HTTPError) and isinstance(
+                    reason, (socket.gaierror, ConnectionRefusedError))
+            if not retry or i == tries - 1:
+                raise
+            time.sleep(0.8 * (i + 1))
+
+
 # ------------------------------------------------------------------ şarkı sözleri (LRCLIB)
 class Lyrics:
     """lrclib.net'ten senkronize sözler. lines(): [(saniye ya da None, metin)]."""
@@ -1306,7 +1341,14 @@ class Lyrics:
 
     def request(self, title, artist, album, dur):
         key = (title, artist)
-        if not title or key == self.key:
+        if not title:
+            return
+        if key == self.key:
+            # hata aldıysa (ör. internet gitti) bir süre sonra kendiliğinden tekrar dene
+            if self.state != "err" or time.monotonic() < getattr(self, "retry_at", 0):
+                return
+            self.key = None
+        if key == self.key:
             return
         self.key = key
         if key in self.cache:
@@ -1328,8 +1370,7 @@ class Lyrics:
     def _get(path, params):
         url = "https://lrclib.net/api" + path + "?" + urllib.parse.urlencode(params)
         req = urllib.request.Request(url, headers={"User-Agent": UA})
-        with urllib.request.urlopen(req, timeout=12) as r:
-            return json.loads(r.read().decode())
+        return json.loads(http_read(req, timeout=12).decode())
 
     @staticmethod
     def parse(text):
@@ -1367,8 +1408,10 @@ class Lyrics:
                 found = [f for f in found if f.get("syncedLyrics")] or found
                 res = found[0] if found else None
         except Exception as e:  # noqa: BLE001
-            log("sözler alınamadı:", repr(e))
-            self._apply(key, "err", False, [])  # önbelleğe alma: sonra tekrar denensin
+            if not is_transient(e):
+                log("sözler alınamadı:", repr(e))
+            self.retry_at = time.monotonic() + 20  # önbelleğe alma: 20 sn sonra tekrar dene
+            self._apply(key, "err", False, [])
             return
         if not res:
             r = ("none", False, [])
@@ -1404,6 +1447,7 @@ class SpotifyWeb:
         self.liked_t = {}    # şarkı kimliği -> son kontrol zamanı
         self.auth_status = None
         self.auth_error = False
+        self.net_down = False   # bağlantı kesintisi sürüyor mu (log tekrarını önler)
         self.wake = threading.Event()
         threading.Thread(target=self._run, daemon=True).start()
 
@@ -1435,8 +1479,7 @@ class SpotifyWeb:
             "https://accounts.spotify.com/api/token",
             data=urllib.parse.urlencode(data).encode(),
             headers={"Content-Type": "application/x-www-form-urlencoded"})
-        with urllib.request.urlopen(req, timeout=15) as r:
-            return json.loads(r.read().decode())
+        return json.loads(http_read(req, timeout=15).decode())
 
     def _ensure_token(self):
         if self.access and time.time() < self.expires - 30:
@@ -1476,12 +1519,12 @@ class SpotifyWeb:
             data = b""
         req = urllib.request.Request("https://api.spotify.com/v1" + path, method=method,
                                      headers=headers, data=data)
-        with urllib.request.urlopen(req, timeout=15) as r:
-            raw = r.read()
-            try:
-                return json.loads(raw.decode()) if raw else {}
-            except ValueError:
-                return {}
+        # POST (sıraya ekleme) iki kez gitmesin: sadece bağlantı hiç kurulamadıysa tekrarla
+        raw = http_read(req, timeout=15, idempotent=method != "POST")
+        try:
+            return json.loads(raw.decode()) if raw else {}
+        except ValueError:
+            return {}
 
     # -- arama, çalma, sıra, cihazlar
     @property
@@ -1555,7 +1598,8 @@ class SpotifyWeb:
             if e.code == 403:  # izin yok: yeniden bağlanmak gerekir
                 self.cfg["scopes"] = ""
         except Exception as e:  # noqa: BLE001
-            log("beğeni durumu okunamadı:", repr(e))
+            if not is_transient(e):  # bağlantı kopmalarını ana döngü bir kez bildirir
+                log("beğeni durumu okunamadı:", repr(e))
 
     def liked_state(self, title):
         """Çalan şarkı (başlığa göre eşleşirse) beğenilmiş mi: True / False / None."""
@@ -1590,10 +1634,10 @@ class SpotifyWeb:
         if not url or url in self.thumbs:
             return
         try:
-            with urllib.request.urlopen(url, timeout=10) as r:
-                self.thumbs[url] = Image.open(io.BytesIO(r.read())).convert("RGB")
-        except Exception:
-            self.thumbs[url] = None
+            self.thumbs[url] = Image.open(io.BytesIO(http_read(url, timeout=10))).convert("RGB")
+        except Exception as e:  # noqa: BLE001
+            if not is_transient(e):  # bağlantı koptuysa sonra tekrar denensin
+                self.thumbs[url] = None
 
     def _fetch(self):
         try:
@@ -1651,8 +1695,15 @@ class SpotifyWeb:
                 last = time.time()
                 try:
                     self._fetch()
+                    if self.net_down:
+                        self.net_down = False
+                        log("bağlantı geri geldi")
                 except Exception as e:  # noqa: BLE001
-                    log("sıradaki listesi alınamadı:", repr(e))
+                    if not is_transient(e):
+                        log("sıradaki listesi alınamadı:", repr(e))
+                    elif not self.net_down:  # kesinti boyunca tek satır
+                        self.net_down = True
+                        log("bağlantı sorunu, otomatik tekrar denenecek:", repr(e))
 
     # -- OAuth PKCE
     def start_auth(self, client_id):
