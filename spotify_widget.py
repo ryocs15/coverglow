@@ -2115,6 +2115,7 @@ class App:
                 self.marq = None
                 self.base, self.hits = self._render_base(connected, queue, qerr)
             self.marq_key = None
+            self._keep_on_screen()
             self.base_strip = self.base.crop((0, self.sy0, self.WP, self.sy0 + self.sh))
             full = True
         pos, end = self._position()
@@ -2145,6 +2146,28 @@ class App:
             if off != self.marq_key:
                 self.marq_key = off
                 self.surface.region(self._render_marquee(off), self.marq["x"], self.marq["y0"])
+
+    def _keep_on_screen(self):
+        """Yükseklik değişince (mini ↔ normal, sekme, satır sayısı): widget ekranın alt
+        yarısındaysa alt kenarını sabit tutup yukarı doğru büyür; her durumda görev
+        çubuğunun altına taşmaz."""
+        new_h = round(self.content_h * self.S)
+        old_h = getattr(self, "_shown_h", None)
+        self._shown_h = new_h
+        if old_h is None or old_h == new_h or self.win_drag:
+            return
+        x, y = self._win_pos()
+        if x <= -20000:  # henüz yerleştirilmedi
+            return
+        wa = monitor_info(self.hwnd).rcWork
+        ny = y
+        if y + old_h / 2 > (wa.top + wa.bottom) / 2:  # alt yarıda: alttan sabitle
+            ny = y + old_h - new_h
+        ny = max(wa.top, min(ny, wa.bottom - new_h))
+        if ny != y:
+            move_window(self.hwnd, x, ny)
+            self.cfg["x"], self.cfg["y"] = x, ny
+            self.cfg.save()
 
     def _vol_shown(self):
         if self.vol_val is not None and time.monotonic() < self.vol_until:
