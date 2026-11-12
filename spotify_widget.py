@@ -57,6 +57,7 @@ CONFIG_PATH = os.path.join(APP_DIR, "config.json")
 LAST_PATH = os.path.join(APP_DIR, "last_track.json")
 LAST_ART_PATH = os.path.join(APP_DIR, "last_art.img")
 STATS_PATH = os.path.join(APP_DIR, "stats.json")
+FRAME_MS = 16  # animasyon karesi aralığı (~60 fps)
 LOG_PATH = os.path.join(APP_DIR, "widget.log")
 STARTUP_VBS = os.path.join(
     os.environ.get("APPDATA", ""),
@@ -178,7 +179,8 @@ STRINGS = {
         "q_share": "Paylaş", "q_open": "Spotify", "off": "Kapalı", "on": "Açık",
         "sleep_left": "{m} dk kaldı", "seg_desktop": "Masaüstü", "seg_top": "Her zaman üstte",
         "m_rows_s": "Listedeki satır", "m_idle_s": "Fare uzaktayken", "m_reconnect": "Yeniden bağla",
-        "hk_list": "KISAYOLLAR",
+        "hk_list": "KISAYOLLAR", "m_fps": "Animasyon akıcılığı",
+        "fps_30": "30 fps · tasarruflu", "fps_60": "60 fps · akıcı",
         "m_accent": "Renk", "ac_auto": "Albüm kapağından", "ac_green": "Yeşil",
         "ac_blue": "Mavi", "ac_purple": "Mor", "ac_pink": "Pembe", "ac_red": "Kırmızı",
         "ac_orange": "Turuncu", "ac_teal": "Turkuaz", "ac_mono": "Gri",
@@ -293,7 +295,8 @@ STRINGS = {
         "q_share": "Share", "q_open": "Spotify", "off": "Off", "on": "On",
         "sleep_left": "{m} min left", "seg_desktop": "Desktop", "seg_top": "Always on top",
         "m_rows_s": "Rows in list", "m_idle_s": "When mouse is away", "m_reconnect": "Reconnect",
-        "hk_list": "SHORTCUTS",
+        "hk_list": "SHORTCUTS", "m_fps": "Animation smoothness",
+        "fps_30": "30 fps · saver", "fps_60": "60 fps · smooth",
         "m_accent": "Color", "ac_auto": "From album art", "ac_green": "Green",
         "ac_blue": "Blue", "ac_purple": "Purple", "ac_pink": "Pink", "ac_red": "Red",
         "ac_orange": "Orange", "ac_teal": "Teal", "ac_mono": "Gray",
@@ -599,9 +602,16 @@ class LayeredSurface:
         r, g, b, a = img.convert("RGBa").split()  # ön-çarpımlı alfa
         return Image.merge("RGBA", (b, g, r, a)).tobytes()
 
-    def full(self, img):
-        data = self.to_bgra(img)
+    def full(self, img, h=None):
+        """Tüm pencereyi güncelle. h verilirse sadece üstteki h satır dönüştürülür (içerik
+        küçükken, ör. mini mod, tüm pencereyi işlememek için); altı şeffaf temizlenir."""
+        h = self.h if h is None else max(1, min(self.h, h))
+        data = self.to_bgra(img if h == self.h else img.crop((0, 0, self.w, h)))
         ctypes.memmove(self.bits, data, len(data))
+        prev = getattr(self, "_used_h", self.h)
+        if prev > h:  # önceki daha uzun içerikten kalan satırları sil
+            ctypes.memset(self.bits.value + h * self.w * 4, 0, (prev - h) * self.w * 4)
+        self._used_h = h
         self._commit(None)
 
     def region(self, img, x, y):
@@ -1803,6 +1813,7 @@ class App:
         self.cfg.setdefault("list_tab", "queue")
         self.cfg.setdefault("accent", "auto")
         self.cfg.setdefault("bg", "solid")
+        self.cfg.setdefault("fps", 60)
         self.cfg.setdefault("react", True)
         self.cfg.setdefault("duck", True)
         self.cfg.setdefault("osd", True)
@@ -2400,7 +2411,11 @@ class App:
         self._render_all()
         if self.marq is not None:
             animating = True
-        self.root.after(40 if (animating or self.drag_seek is not None) else 200, self._tick)
+        # animasyon varken ~60 fps: bu karenin süresini düşerek sabit aralık tut
+        frame_ms = FRAME_MS if self.cfg["fps"] >= 60 else 33
+        interval = frame_ms if (animating or self.drag_seek is not None) else 200
+        work = (time.monotonic() - now) * 1000
+        self.root.after(max(1, int(interval - work)), self._tick)
 
     def _start_palette(self, target):
         self.pal_from = self.pal
@@ -3057,7 +3072,7 @@ class App:
                     off = self._marq_offset()
                     self.marq_key = off
                     frame.paste(self._render_marquee(off), (self.marq["x"], self.marq["y0"]))
-                self.surface.full(frame)
+                self.surface.full(frame, round(self.content_h * self.S) + 4)
             else:
                 self.surface.region(strip, 0, self.sy0)
         if self.marq and not full:
@@ -4714,6 +4729,9 @@ class MenuPanel:
                  "set": lambda v: app._set("wave", v)},
                 {"t": "toggle", "id": "t_react", "label": T("m_react"), "on": c["react"],
                  "set": lambda v: app._set("react", v), "disabled": not c["wave"]},
+                {"t": "seg", "id": "s_fps", "label": T("m_fps"), "value": c["fps"],
+                 "options": [(30, T("fps_30")), (60, T("fps_60"))],
+                 "set": lambda v: app._set("fps", v)},
                 {"t": "toggle", "id": "t_list", "label": T("m_showlist").split(" (")[0],
                  "on": c["show_queue"], "set": lambda v: app._set("show_queue", v)},
                 {"t": "seg", "id": "s_rows", "label": T("m_rows_s"), "value": int(c["queue_rows"]),
@@ -5353,6 +5371,8 @@ if __name__ == "__main__":
     ctypes.windll.kernel32.CreateMutexW(None, False, "Local\\SpotifyMaterialWidget")
     if ctypes.windll.kernel32.GetLastError() == 183:  # ERROR_ALREADY_EXISTS
         sys.exit(0)
+    # Windows zamanlayıcısı varsayılan 15,6 ms adımlarla çalışır: animasyonlar takılmasın diye 1 ms
+    ctypes.windll.winmm.timeBeginPeriod(1)
     try:
         App().run()
     except Exception:
