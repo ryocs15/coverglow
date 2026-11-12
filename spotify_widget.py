@@ -2224,6 +2224,7 @@ class App:
         ck = (period, today, int(time.time() // 60), self.import_ver)
         if getattr(self, "_sum_cache", (None,))[0] == ck:
             return self._sum_cache[1]
+        end = today
         if period == "7":
             start = today - timedelta(days=6)
         elif period == "30":
@@ -2231,35 +2232,53 @@ class App:
         elif period == "365":
             m = today.month - 11
             start = date(today.year + (m - 1) // 12, (m - 1) % 12 + 1, 1)
+        elif period.startswith("y"):  # tek bir yıl (aylar)
+            yy = int(period[1:])
+            start, end = date(yy, 1, 1), min(today, date(yy, 12, 31))
+        elif period.startswith("m"):  # tek bir ay (günler)
+            yy, mo = int(period[1:5]), int(period[6:8])
+            start = date(yy, mo, 1)
+            nxt = date(yy + mo // 12, mo % 12 + 1, 1)
+            end = min(today, nxt - timedelta(days=1))
         else:
             keys = list(self.imported) + list(self.stats["days"])
             start = date.fromisoformat(min(keys)) if keys else today
-        s0, s1 = start.isoformat(), today.isoformat()
+        s0, s1 = start.isoformat(), end.isoformat()
 
-        # grafik kovaları
+        # grafik kovaları; targets: tıklanınca açılacak dönem (ay / yıl)
         names = T("days").split()
         months = T("months").split()
-        if period in ("7", "30"):
-            n = 7 if period == "7" else 30
-            bdays = [today - timedelta(days=n - 1 - i) for i in range(n)]
-            bkeys = [d.isoformat() for d in bdays]
-            if n == 7:
-                labels = [names[d.weekday()] for d in bdays]
+        targets = None
+        if period in ("7", "30") or period.startswith("m"):
+            if period.startswith("m"):
+                n = (end - start).days + 1
+                bdays = [start + timedelta(days=i) for i in range(n)]
+                labels = [str(d.day) if d.day in (1, 8, 15, 22, 29) else "" for d in bdays]
             else:
-                labels = [str(d.day) if (n - 1 - i) % 7 == 0 else "" for i, d in enumerate(bdays)]
+                n = 7 if period == "7" else 30
+                bdays = [today - timedelta(days=n - 1 - i) for i in range(n)]
+                if n == 7:
+                    labels = [names[d.weekday()] for d in bdays]
+                else:
+                    labels = [str(d.day) if (n - 1 - i) % 7 == 0 else ""
+                              for i, d in enumerate(bdays)]
+            bkeys = [d.isoformat() for d in bdays]
             bucket = lambda k: k  # noqa: E731
-        elif period == "365":
+        elif period == "365" or period.startswith("y"):
             bkeys, labels = [], []
             y, mo = start.year, start.month
-            for _ in range(12):
+            for _ in range(12 if period == "365" else end.month):
                 bkeys.append(f"{y:04d}-{mo:02d}")
                 labels.append(months[mo - 1])
                 y, mo = (y + 1, 1) if mo == 12 else (y, mo + 1)
+            targets = ["m" + k for k in bkeys]
             bucket = lambda k: k[:7]  # noqa: E731
         else:
             bkeys = [str(y) for y in range(start.year, today.year + 1)]
             labels = [k if len(bkeys) <= 7 else "'" + k[2:] for k in bkeys]
+            targets = ["y" + k for k in bkeys]
             bucket = lambda k: k[:4]  # noqa: E731
+        cur = {today.isoformat(), today.isoformat()[:7], today.isoformat()[:4]}
 
         def add(acc, d, k):
             sec = d.get("sec", 0.0)
@@ -2293,15 +2312,22 @@ class App:
             tiles = [(fmt_dur(td.get("sec", 0.0)), T("st_today")),
                      (fmt_dur(total), T("st_week")), (str(td.get("plays", 0)), T("st_songs"))]
         else:
-            ndays = max(1, (today - start).days + 1)
+            ndays = max(1, (end - start).days + 1)
             tiles = [(fmt_dur(total), T("st_total")),
                      (f"{int(plays):,}".replace(",", "."), T("st_plays")),
                      (fmt_dur(total / ndays), T("st_avg"))]
         top_a = sorted(artists.items(), key=lambda kv: -kv[1])[:3]
         top_t = [(t.split("\t")[0], t.split("\t")[1] if "\t" in t else "", v)
                  for t, v in sorted(tracks.items(), key=lambda kv: -kv[1])[:3]]
-        res = {"tiles": tiles, "bars": [(labels[i], bvals[k]) for i, k in enumerate(bkeys)],
-               "top_a": top_a, "top_t": top_t}
+        # açılan dönemin başlığı ve bir üst seviye
+        title = up = None
+        if period.startswith("y"):
+            title, up = period[1:], "all"
+        elif period.startswith("m"):
+            title, up = f"{months[int(period[6:8]) - 1]} {period[1:5]}", "y" + period[1:5]
+        res = {"tiles": tiles, "top_a": top_a, "top_t": top_t, "title": title, "up": up,
+               "bars": [(labels[i], bvals[k], targets[i] if targets else None, k in cur)
+                        for i, k in enumerate(bkeys)]}
         self._sum_cache = (ck, res)
         return res
 
@@ -2890,6 +2916,15 @@ class App:
             d.text((X(x + w / 2), X(cy)), lbl, font=F["qsub"], fill=col + (255,), anchor="mm")
             hits.append((hid, x, cy - 14, x + w, cy + 14))
             x += w + 4
+        if sm["title"]:  # açılmış yıl / ay: tıklayınca bir üst seviyeye döner
+            lbl = "← " + sm["title"]
+            w = F["qsub"].getlength(lbl) / S + 22
+            x = max(x + 4, W - 16 - w)
+            col = P["primary"] if hov != "sup" else mix(P["primary"], P["on_primary"], 0.12)
+            rr(img, X(x), X(cy - 13), X(x + w), X(cy + 13), X(13), col)
+            d.text((X(x + w / 2), X(cy)), lbl, font=F["qsub"], fill=P["on_primary"] + (255,),
+                   anchor="mm")
+            hits.append(("sup", x, cy - 14, x + w, cy + 14))
 
         # özet kutuları
         gap, x0, ty = 8, 16, top + 34
@@ -2910,20 +2945,26 @@ class App:
         cw = (W - 32) / n
         bw = min(22.0, cw * 0.62)
         br = min(8.0, bw / 2)
-        mx = max([v for _l, v in bars] + [1.0])
-        for i, (lbl, sec) in enumerate(bars):
+        mx = max([b[1] for b in bars] + [1.0])
+        for i, (lbl, sec, target, hl) in enumerate(bars):
             cx = 16 + cw * (i + 0.5)
-            last = i == n - 1
+            hid = f"sb{i}"
+            over = target is not None and hov == hid
+            if over:
+                rr(img, X(cx - cw / 2 + 1), X(by0 - 6), X(cx + cw / 2 - 1), X(by1 + 22), X(10),
+                   P["on_surface"], alpha=20)
             rr(img, X(cx - bw / 2), X(by0), X(cx + bw / 2), X(by1), X(br), P["on_surface"],
                alpha=16)
             if sec > 0:
                 h = max(bw, (by1 - by0) * sec / mx)
                 rr(img, X(cx - bw / 2), X(by1 - h), X(cx + bw / 2), X(by1), X(br), P["primary"],
-                   alpha=255 if last else 130)
+                   alpha=255 if (hl or over) else 130)
             if lbl:
                 d.text((X(cx), X(by1 + 13)), lbl, font=F["qsub"],
-                       fill=(P["primary"] if last else P["on_surface_variant"]) + (255,),
+                       fill=(P["primary"] if (hl or over) else P["on_surface_variant"]) + (255,),
                        anchor="mm")
+            if target is not None:
+                hits.append((hid, cx - cw / 2, by0 - 6, cx + cw / 2, by1 + 22))
 
         # en çok dinlenenler: sanatçı / şarkı
         hy = top + 182
@@ -3181,6 +3222,15 @@ class App:
             ConnectDialog(self)
         elif a.startswith("sp_"):
             self._set("stats_period", a[3:])
+        elif a == "sup":  # açılmış aydan yıla, yıldan tümüne
+            up = self._stats_summary()["up"]
+            if up:
+                self._set("stats_period", up)
+        elif a.startswith("sb"):  # grafikte yıl / ay çubuğu: o dönemi aç
+            bars = self._stats_summary()["bars"]
+            i = int(a[2:])
+            if i < len(bars) and bars[i][2]:
+                self._set("stats_period", bars[i][2])
         elif a.startswith("sl_"):
             self._set("stats_list", a[3:])
         elif a.startswith("sr"):  # en çok dinlenen: Spotify'da ara
