@@ -4,6 +4,7 @@ history.json
 last_track.json
 last_art.img
 stats.json
+stats_import.json
 widget.log
 *.log
 

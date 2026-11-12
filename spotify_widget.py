@@ -81,7 +81,7 @@ Q_ROW = 56
 Q_ROWS = 5
 Q_PAD = 10
 TOTAL_H = MAIN_H + GAP + Q_HEAD + Q_ROWS * Q_ROW + Q_PAD
-STATS_H = 270  # istatistik sekmesinin gövde yüksekliği (en fazla Q_ROWS * Q_ROW + Q_PAD)
+STATS_H = 286  # istatistik sekmesinin gövde yüksekliği (en fazla Q_ROWS * Q_ROW + Q_PAD)
 
 # boyut ön ayarları (DPI ölçeğinin üstüne çarpan); Ctrl + tekerlek ile ara değerler
 SIZES = (("size_s", 0.75), ("size_m", 0.85), ("size_n", 1.0), ("size_l", 1.15))
@@ -124,7 +124,19 @@ STRINGS = {
         "tab_stats": "İstatistik", "st_today": "Bugün", "st_week": "Bu hafta",
         "st_songs": "Şarkı · bugün", "st_top": "EN ÇOK DİNLENENLER · 7 GÜN",
         "st_empty": "Dinledikçe burada görünecek", "dur_min": "{m} dk", "dur_hm": "{h} sa {m} dk",
-        "days": "Pt Sa Ça Pe Cu Ct Pz",
+        "days": "Pt Sa Ça Pe Cu Ct Pz", "dur_h": "{h} sa",
+        "months": "Oca Şub Mar Nis May Haz Tem Ağu Eyl Eki Kas Ara",
+        "sp_7": "7 gün", "sp_30": "30 gün", "sp_365": "1 yıl", "sp_all": "Tümü",
+        "st_total": "Toplam", "st_plays": "Çalma", "st_avg": "Günlük ort.",
+        "st_top_a": "EN ÇOK DİNLENEN SANATÇILAR", "st_top_t": "EN ÇOK DİNLENEN ŞARKILAR",
+        "sl_artists": "Sanatçı", "sl_tracks": "Şarkı",
+        "m_import": "Spotify verisini içe aktar…",
+        "imp_title": "Spotify verisi", "imp_busy": "İçe aktarılıyor…",
+        "imp_ok": "{n} dinleme içe aktarıldı ({h} saat, {a} – {b}).",
+        "imp_none": "Dosyada dinleme geçmişi bulunamadı.",
+        "imp_fail": "İçe aktarılamadı: {e}",
+        "imp_hint": ("Spotify > Hesap > Gizlilik ayarları > \"Verilerini indir\" ile aldığın "
+                     ".zip dosyasını ya da içindeki StreamingHistory .json dosyalarını seç."),
         "m_accent": "Renk", "ac_auto": "Albüm kapağından", "ac_green": "Yeşil",
         "ac_blue": "Mavi", "ac_purple": "Mor", "ac_pink": "Pembe", "ac_red": "Kırmızı",
         "ac_orange": "Turuncu", "ac_teal": "Turkuaz", "ac_mono": "Gri",
@@ -189,7 +201,19 @@ STRINGS = {
         "tab_stats": "Stats", "st_today": "Today", "st_week": "This week",
         "st_songs": "Songs · today", "st_top": "TOP ARTISTS · 7 DAYS",
         "st_empty": "Your listening will show up here", "dur_min": "{m} min",
-        "dur_hm": "{h}h {m}m", "days": "Mo Tu We Th Fr Sa Su",
+        "dur_hm": "{h}h {m}m", "days": "Mo Tu We Th Fr Sa Su", "dur_h": "{h}h",
+        "months": "Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec",
+        "sp_7": "7 days", "sp_30": "30 days", "sp_365": "1 year", "sp_all": "All time",
+        "st_total": "Total", "st_plays": "Plays", "st_avg": "Daily avg.",
+        "st_top_a": "TOP ARTISTS", "st_top_t": "TOP SONGS",
+        "sl_artists": "Artists", "sl_tracks": "Songs",
+        "m_import": "Import Spotify data…",
+        "imp_title": "Spotify data", "imp_busy": "Importing…",
+        "imp_ok": "Imported {n} plays ({h} hours, {a} – {b}).",
+        "imp_none": "No listening history found in the file.",
+        "imp_fail": "Import failed: {e}",
+        "imp_hint": ("Pick the .zip from Spotify > Account > Privacy settings > "
+                     "\"Download your data\", or the StreamingHistory .json files inside it."),
         "m_accent": "Color", "ac_auto": "From album art", "ac_green": "Green",
         "ac_blue": "Blue", "ac_purple": "Purple", "ac_pink": "Pink", "ac_red": "Red",
         "ac_orange": "Orange", "ac_teal": "Teal", "ac_mono": "Gray",
@@ -257,7 +281,105 @@ def default_lang():
 
 def fmt_dur(sec):
     m = int(sec // 60)
+    if m >= 6000:  # 100 saatten fazlası: sadece saat
+        return T("dur_h", h=f"{m // 60:,}".replace(",", "."))
     return T("dur_min", m=m) if m < 60 else T("dur_hm", h=m // 60, m=m % 60)
+
+
+STATS_IMPORT_PATH = os.path.join(APP_DIR, "stats_import.json")
+
+
+def import_spotify_history(paths):
+    """Spotify 'Verilerini indir' dışa aktarımını (zip ya da json) günlük özetlere çevirir.
+    Hem genişletilmiş geçmiş (ts, ms_played, master_metadata_*) hem de hesap verisi
+    (endTime, msPlayed, artistName, trackName) biçimini destekler. Sadece müzik sayılır."""
+    import zipfile
+
+    def records():
+        for p in paths:
+            if p.lower().endswith(".zip"):
+                with zipfile.ZipFile(p) as z:
+                    for name in z.namelist():
+                        base = os.path.basename(name)
+                        if base.endswith(".json") and (base.startswith("Streaming_History_Audio")
+                                                       or base.startswith("StreamingHistory")
+                                                       or base.startswith("endsong")):
+                            yield from json.loads(z.read(name))
+            else:
+                with open(p, "r", encoding="utf-8") as f:
+                    yield from json.load(f)
+
+    artists, a_idx, tracks, t_idx, days = [], {}, [], {}, {}
+    n, total, first, last = 0, 0.0, None, None
+    for r in records():
+        if not isinstance(r, dict):
+            continue
+        if "ts" in r:
+            title = r.get("master_metadata_track_name")
+            artist = r.get("master_metadata_album_artist_name")
+            ms, stamp = r.get("ms_played") or 0, r.get("ts")
+            when = datetime.fromisoformat(stamp.replace("Z", "+00:00")) if stamp else None
+        else:
+            title, artist = r.get("trackName"), r.get("artistName")
+            ms, stamp = r.get("msPlayed") or 0, r.get("endTime")
+            when = (datetime.strptime(stamp, "%Y-%m-%d %H:%M").replace(tzinfo=timezone.utc)
+                    if stamp else None)
+            if r.get("podcastName") or r.get("episodeName"):
+                title = None
+        if not title or not artist or when is None or ms <= 0:
+            continue  # podcast, sesli kitap, bozuk kayıt
+        day = when.astimezone().date().isoformat()
+        sec = ms / 1000.0
+        ai = a_idx.get(artist)
+        if ai is None:
+            ai = a_idx[artist] = len(artists)
+            artists.append(artist)
+        tk_ = (title, ai)
+        ti = t_idx.get(tk_)
+        if ti is None:
+            ti = t_idx[tk_] = len(tracks)
+            tracks.append([title, ai])
+        d = days.setdefault(day, {"s": 0.0, "p": 0, "a": {}, "t": {}})
+        d["s"] += sec
+        if ms >= 30000:  # Spotify 30 sn'yi bir dinleme sayar
+            d["p"] += 1
+        d["a"][ai] = d["a"].get(ai, 0.0) + sec
+        d["t"][ti] = d["t"].get(ti, 0.0) + sec
+        n += 1
+        total += sec
+        first = day if first is None or day < first else first
+        last = day if last is None or day > last else last
+    if not n:
+        return None
+    for d in days.values():  # dosya küçük kalsın
+        d["s"] = round(d["s"], 1)
+        d["a"] = {str(k): round(v, 1) for k, v in d["a"].items()}
+        d["t"] = {str(k): round(v, 1) for k, v in d["t"].items()}
+    data = {"version": 1, "first": first, "last": last, "artists": artists, "tracks": tracks,
+            "days": days}
+    with open(STATS_IMPORT_PATH, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, separators=(",", ":"))
+    return {"n": n, "hours": round(total / 3600), "first": first, "last": last}
+
+
+def load_imported_history():
+    """stats_import.json → {gün: {"sec", "plays", "artists": {ad: sn}, "tracks": {ad\\tsanatçı: sn}}}"""
+    try:
+        with open(STATS_IMPORT_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        artists, tracks = data["artists"], data["tracks"]
+        tnames = [f"{t}\t{artists[a]}" for t, a in tracks]
+        out = {}
+        for day, d in data["days"].items():
+            out[day] = {"sec": d["s"], "plays": d["p"],
+                        "artists": {artists[int(k)]: v for k, v in d["a"].items()},
+                        "tracks": {tnames[int(k)]: v for k, v in d["t"].items()}}
+        return out
+    except FileNotFoundError:
+        return {}
+    except Exception as e:  # noqa: BLE001
+        log("içe aktarılan geçmiş okunamadı:", repr(e))
+        return {}
 
 
 def time_ago(ts):
@@ -1372,7 +1494,11 @@ class App:
         self.cfg.setdefault("list_tab", "queue")
         self.cfg.setdefault("accent", "auto")
         self.cfg.setdefault("bg", "solid")
+        self.cfg.setdefault("stats_period", "7")
+        self.cfg.setdefault("stats_list", "artists")
         self.stats = self._load_stats()
+        self.imported = load_imported_history()   # Spotify'dan içe aktarılan geçmiş
+        self.import_ver = 0
         self._stat_t = None
         self._stat_saved = time.monotonic()
         self._glass = {}         # bulanık duvar kağıdı önbelleği
@@ -2050,7 +2176,7 @@ class App:
 
     def _save_stats(self):
         days = self.stats["days"]
-        cutoff = (date.today() - timedelta(days=60)).isoformat()
+        cutoff = (date.today() - timedelta(days=400)).isoformat()
         for k in [k for k in days if k < cutoff]:
             del days[k]
         try:
@@ -2075,21 +2201,153 @@ class App:
         d["sec"] += delta
         artist = (st.get("artist") or "").split(", ")[0].strip() or T("unknown")
         d["artists"][artist] = d["artists"].get(artist, 0.0) + delta
+        if st.get("title"):
+            tkey = f'{st["title"]}\t{artist}'
+            tr = d.setdefault("tracks", {})
+            tr[tkey] = tr.get(tkey, 0.0) + delta
         if now - self._stat_saved > 30:
             self._save_stats()
 
+    STAT_PERIODS = ("7", "30", "365", "all")
+
+    def _stat_get(self, key):
+        """Bir günün verisi: canlı takip ve içe aktarılan geçmiş çakışırsa büyüğü alınır
+        (aynı dinlemenin iki kez sayılmaması için)."""
+        a, b = self.stats["days"].get(key), self.imported.get(key)
+        if a is None or (b is not None and b["sec"] > a.get("sec", 0)):
+            return b
+        return a
+
     def _stats_summary(self):
-        days = self.stats["days"]
+        period = self.cfg["stats_period"]
         today = date.today()
-        week = [today - timedelta(days=i) for i in range(6, -1, -1)]
-        per_day = [days.get(d.isoformat(), {}).get("sec", 0.0) for d in week]
-        artists = {}
-        for d in week:
-            for a, s in days.get(d.isoformat(), {}).get("artists", {}).items():
-                artists[a] = artists.get(a, 0.0) + s
-        top = sorted(artists.items(), key=lambda kv: -kv[1])[:3]
-        return {"today": per_day[-1], "week": sum(per_day), "days": list(zip(week, per_day)),
-                "plays": days.get(today.isoformat(), {}).get("plays", 0), "top": top}
+        ck = (period, today, int(time.time() // 60), self.import_ver)
+        if getattr(self, "_sum_cache", (None,))[0] == ck:
+            return self._sum_cache[1]
+        if period == "7":
+            start = today - timedelta(days=6)
+        elif period == "30":
+            start = today - timedelta(days=29)
+        elif period == "365":
+            m = today.month - 11
+            start = date(today.year + (m - 1) // 12, (m - 1) % 12 + 1, 1)
+        else:
+            keys = list(self.imported) + list(self.stats["days"])
+            start = date.fromisoformat(min(keys)) if keys else today
+        s0, s1 = start.isoformat(), today.isoformat()
+
+        # grafik kovaları
+        names = T("days").split()
+        months = T("months").split()
+        if period in ("7", "30"):
+            n = 7 if period == "7" else 30
+            bdays = [today - timedelta(days=n - 1 - i) for i in range(n)]
+            bkeys = [d.isoformat() for d in bdays]
+            if n == 7:
+                labels = [names[d.weekday()] for d in bdays]
+            else:
+                labels = [str(d.day) if (n - 1 - i) % 7 == 0 else "" for i, d in enumerate(bdays)]
+            bucket = lambda k: k  # noqa: E731
+        elif period == "365":
+            bkeys, labels = [], []
+            y, mo = start.year, start.month
+            for _ in range(12):
+                bkeys.append(f"{y:04d}-{mo:02d}")
+                labels.append(months[mo - 1])
+                y, mo = (y + 1, 1) if mo == 12 else (y, mo + 1)
+            bucket = lambda k: k[:7]  # noqa: E731
+        else:
+            bkeys = [str(y) for y in range(start.year, today.year + 1)]
+            labels = [k if len(bkeys) <= 7 else "'" + k[2:] for k in bkeys]
+            bucket = lambda k: k[:4]  # noqa: E731
+
+        def add(acc, d, k):
+            sec = d.get("sec", 0.0)
+            acc[0] += sec
+            acc[1] += d.get("plays", 0)
+            b = bucket(k)
+            if b in acc[2]:
+                acc[2][b] += sec
+            for a, v in d.get("artists", {}).items():
+                acc[3][a] = acc[3].get(a, 0.0) + v
+            for t, v in d.get("tracks", {}).items():
+                acc[4][t] = acc[4].get(t, 0.0) + v
+
+        # içe aktarılan (değişmeyen) kısım önbellekte; canlı günler her seferinde eklenir
+        live = [k for k in self.stats["days"] if s0 <= k <= s1]
+        bk = (period, today, self.import_ver, tuple(sorted(live)))
+        if getattr(self, "_imp_cache", (None,))[0] != bk:
+            acc = [0.0, 0, dict.fromkeys(bkeys, 0.0), {}, {}]
+            skip = set(live)
+            for k, d in self.imported.items():
+                if s0 <= k <= s1 and k not in skip:
+                    add(acc, d, k)
+            self._imp_cache = (bk, acc)
+        base = self._imp_cache[1]
+        acc = [base[0], base[1], dict(base[2]), dict(base[3]), dict(base[4])]
+        for k in live:
+            add(acc, self._stat_get(k), k)
+        total, plays, bvals, artists, tracks = acc
+        td = self._stat_get(s1) or {}
+        if period == "7":
+            tiles = [(fmt_dur(td.get("sec", 0.0)), T("st_today")),
+                     (fmt_dur(total), T("st_week")), (str(td.get("plays", 0)), T("st_songs"))]
+        else:
+            ndays = max(1, (today - start).days + 1)
+            tiles = [(fmt_dur(total), T("st_total")),
+                     (f"{int(plays):,}".replace(",", "."), T("st_plays")),
+                     (fmt_dur(total / ndays), T("st_avg"))]
+        top_a = sorted(artists.items(), key=lambda kv: -kv[1])[:3]
+        top_t = [(t.split("\t")[0], t.split("\t")[1] if "\t" in t else "", v)
+                 for t, v in sorted(tracks.items(), key=lambda kv: -kv[1])[:3]]
+        res = {"tiles": tiles, "bars": [(labels[i], bvals[k]) for i, k in enumerate(bkeys)],
+               "top_a": top_a, "top_t": top_t}
+        self._sum_cache = (ck, res)
+        return res
+
+    def _import_data(self):
+        from tkinter import filedialog, messagebox
+        paths = filedialog.askopenfilenames(
+            parent=self.root, title=T("imp_title"),
+            filetypes=[("Spotify", "*.zip *.json"), ("*", "*.*")])
+        if not paths:
+            return
+        result = {}
+
+        def work():
+            try:
+                result["r"] = import_spotify_history(list(paths))
+            except Exception as e:  # noqa: BLE001
+                result["e"] = e
+
+        th = threading.Thread(target=work, daemon=True)
+        th.start()
+
+        def wait():
+            if th.is_alive():
+                self.root.after(200, wait)
+                return
+            if "e" in result:
+                log("içe aktarma:", repr(result["e"]))
+                messagebox.showerror(T("imp_title"), T("imp_fail", e=result["e"]),
+                                     parent=self.root)
+                return
+            r = result.get("r")
+            if not r:
+                messagebox.showwarning(T("imp_title"), T("imp_none") + "\n\n" + T("imp_hint"),
+                                       parent=self.root)
+                return
+            self.imported = load_imported_history()
+            self.import_ver += 1
+            self.cfg["list_tab"], self.cfg["stats_period"] = "stats", "all"
+            self.cfg["queue_collapsed"] = False
+            self.cfg.save()
+            self.base_key = None
+            messagebox.showinfo(T("imp_title"), T("imp_ok", n=f"{r['n']:,}".replace(",", "."),
+                                                  h=f"{r['hours']:,}".replace(",", "."),
+                                                  a=r["first"], b=r["last"]), parent=self.root)
+
+        wait()
 
     # ---------------- çizim
     def _render_all(self):
@@ -2105,6 +2363,7 @@ class App:
                self.history[0].get("t") if self.history else None,
                int(time.time() // 60) if self.cfg["list_tab"] != "queue" else 0,
                self.cfg["accent"], self.cfg["bg"], self.glass_ver,
+               self.cfg["stats_period"], self.cfg["stats_list"], self.import_ver,
                self._win_pos() if self.cfg["bg"] == "glass" else None)
         full = False
         if key != self.base_key:
@@ -2552,7 +2811,7 @@ class App:
         if collapsed:
             return
         if tab == "stats":
-            self._render_stats(img, d, top)
+            self._render_stats(img, d, top, hits)
             return
         if need_connect:
             d.text((X(22), X(top + 4)), T("connect_line1"), font=F["body"],
@@ -2599,7 +2858,7 @@ class App:
                        fill=P["on_surface_variant"] + (255,), anchor="rm")
             hits.append((hid, 8, ry, W - 8, ry + Q_ROW))
 
-    def _render_stats(self, img, d, top):
+    def _render_stats(self, img, d, top, hits):
         S, P, F = self.S, self.pal, self.F
         X = lambda v: v * S  # noqa: E731
         sm = self._stats_summary()
@@ -2611,58 +2870,113 @@ class App:
             else:
                 rr(img, X(x0), X(y0), X(x1), X(y1), X(r), P["on_surface"], alpha=22)
 
+        hov = self.hover
+        period, lst = self.cfg["stats_period"], self.cfg["stats_list"]
+
+        # dönem seçici
+        x, cy = 16, top + 12
+        for p in self.STAT_PERIODS:
+            lbl = T("sp_" + p)
+            w = F["qsub"].getlength(lbl) / S + 20
+            hid = "sp_" + p
+            if p == period:
+                rr(img, X(x), X(cy - 13), X(x + w), X(cy + 13), X(13), P["secondary_container"])
+                col = P["on_secondary_container"]
+            else:
+                if hov == hid:
+                    rr(img, X(x), X(cy - 13), X(x + w), X(cy + 13), X(13), P["on_surface"],
+                       alpha=22)
+                col = P["on_surface_variant"]
+            d.text((X(x + w / 2), X(cy)), lbl, font=F["qsub"], fill=col + (255,), anchor="mm")
+            hits.append((hid, x, cy - 14, x + w, cy + 14))
+            x += w + 4
+
         # özet kutuları
-        gap, x0 = 8, 16
+        gap, x0, ty = 8, 16, top + 34
         tw = (W - 32 - 2 * gap) / 3
-        for i, (val, lbl) in enumerate(((fmt_dur(sm["today"]), T("st_today")),
-                                        (fmt_dur(sm["week"]), T("st_week")),
-                                        (str(sm["plays"]), T("st_songs")))):
+        for i, (val, lbl) in enumerate(sm["tiles"]):
             tx = x0 + i * (tw + gap)
-            tile(tx, top, tx + tw, top + 54, 16)
-            d.text((X(tx + 12), X(top + 20)), fit_text(val, F["qhead"], X(tw - 20)),
+            tile(tx, ty, tx + tw, ty + 52, 16)
+            d.text((X(tx + 12), X(ty + 19)), fit_text(val, F["qhead"], X(tw - 20)),
                    font=F["qhead"], fill=(P["primary"] if i == 0 else P["on_surface"]) + (255,),
                    anchor="lm")
-            d.text((X(tx + 12), X(top + 39)), fit_text(lbl, F["qsub"], X(tw - 20)),
+            d.text((X(tx + 12), X(ty + 37)), fit_text(lbl, F["qsub"], X(tw - 20)),
                    font=F["qsub"], fill=P["on_surface_variant"] + (255,), anchor="lm")
 
-        # son 7 gün
-        by0, by1 = top + 70, top + 126
-        cw = (W - 32) / 7
-        mx = max([s for _d, s in sm["days"]] + [1.0])
-        names = T("days").split()
-        for i, (day, sec) in enumerate(sm["days"]):
+        # grafik (gün / ay / yıl)
+        bars = sm["bars"]
+        n = max(1, len(bars))
+        by0, by1 = top + 100, top + 146
+        cw = (W - 32) / n
+        bw = min(22.0, cw * 0.62)
+        br = min(8.0, bw / 2)
+        mx = max([v for _l, v in bars] + [1.0])
+        for i, (lbl, sec) in enumerate(bars):
             cx = 16 + cw * (i + 0.5)
-            today = i == 6
-            rr(img, X(cx - 11), X(by0), X(cx + 11), X(by1), X(8), P["on_surface"], alpha=16)
+            last = i == n - 1
+            rr(img, X(cx - bw / 2), X(by0), X(cx + bw / 2), X(by1), X(br), P["on_surface"],
+               alpha=16)
             if sec > 0:
-                h = max(8.0, (by1 - by0) * sec / mx)
-                rr(img, X(cx - 11), X(by1 - h), X(cx + 11), X(by1), X(8), P["primary"],
-                   alpha=255 if today else 130)
-            d.text((X(cx), X(by1 + 14)), names[day.weekday()], font=F["qsub"],
-                   fill=(P["primary"] if today else P["on_surface_variant"]) + (255,),
-                   anchor="mm")
+                h = max(bw, (by1 - by0) * sec / mx)
+                rr(img, X(cx - bw / 2), X(by1 - h), X(cx + bw / 2), X(by1), X(br), P["primary"],
+                   alpha=255 if last else 130)
+            if lbl:
+                d.text((X(cx), X(by1 + 13)), lbl, font=F["qsub"],
+                       fill=(P["primary"] if last else P["on_surface_variant"]) + (255,),
+                       anchor="mm")
 
-        # en çok dinlenen sanatçılar
-        hy = top + 168
-        d.text((X(20), X(hy)), T("st_top"), font=F["status"], fill=P["primary"] + (255,),
-               anchor="lm")
-        if not sm["top"]:
-            d.text((X(20), X(hy + 28)), T("st_empty"), font=F["body"],
+        # en çok dinlenenler: sanatçı / şarkı
+        hy = top + 182
+        d.text((X(20), X(hy)), T("st_top_a" if lst == "artists" else "st_top_t"),
+               font=F["status"], fill=P["primary"] + (255,), anchor="lm")
+        x = W - 16
+        for key in ("tracks", "artists"):
+            lbl = T("sl_" + key)
+            w = F["qsub"].getlength(lbl) / S + 16
+            x -= w
+            hid = "sl_" + key
+            if key == lst:
+                rr(img, X(x), X(hy - 11), X(x + w), X(hy + 11), X(11), P["secondary_container"])
+                col = P["on_secondary_container"]
+            else:
+                if hov == hid:
+                    rr(img, X(x), X(hy - 11), X(x + w), X(hy + 11), X(11), P["on_surface"],
+                       alpha=22)
+                col = P["on_surface_variant"]
+            d.text((X(x + w / 2), X(hy)), lbl, font=F["qsub"], fill=col + (255,), anchor="mm")
+            hits.append((hid, x, hy - 12, x + w, hy + 12))
+            x -= 4
+        rows = sm["top_a"] if lst == "artists" else [(t, v) for t, _a, v in sm["top_t"]]
+        if not rows:
+            d.text((X(20), X(hy + 30)), T("st_empty"), font=F["body"],
                    fill=P["on_surface_variant"] + (255,), anchor="lm")
             return
-        best = sm["top"][0][1] or 1.0
-        for i, (name, sec) in enumerate(sm["top"]):
-            ry = hy + 22 + i * 26
+        best = rows[0][1] or 1.0
+        for i, (name, sec) in enumerate(rows):
+            ry = hy + 24 + i * 26
+            hid = f"sr{i}"
+            if hov == hid:
+                rr(img, X(10), X(ry - 11), X(W - 10), X(ry + 19), X(10), P["on_surface"],
+                   alpha=18)
             dur = fmt_dur(sec)
-            dw = F["qsub"].getlength(dur)
-            d.text((X(20), X(ry)), fit_text(name, F["qtitle"], X(W - 40) - dw - X(12)),
-                   font=F["qtitle"], fill=P["on_surface"] + (255,), anchor="lm")
+            avail = X(W - 40) - F["qsub"].getlength(dur) - X(12)
+            t1 = fit_text(name, F["qtitle"], avail)
+            d.text((X(20), X(ry)), t1, font=F["qtitle"], fill=P["on_surface"] + (255,),
+                   anchor="lm")
+            if lst == "tracks":
+                rest = avail - F["qtitle"].getlength(t1)
+                artist = sm["top_t"][i][1]
+                if artist and rest > X(40):
+                    d.text((X(20) + avail - rest, X(ry + 1)),
+                           fit_text(" · " + artist, F["qsub"], rest), font=F["qsub"],
+                           fill=P["on_surface_variant"] + (255,), anchor="lm")
             d.text((X(W - 20), X(ry)), dur, font=F["qsub"],
                    fill=P["on_surface_variant"] + (255,), anchor="rm")
             rr(img, X(20), X(ry + 13), X(W - 20), X(ry + 16), X(1.5), P["on_surface"],
                alpha=16)
             rr(img, X(20), X(ry + 13), X(20 + (W - 40) * sec / best), X(ry + 16), X(1.5),
                P["primary"], alpha=200)
+            hits.append((hid, 10, ry - 11, W - 10, ry + 19))
 
     def _queue_thumb(self, url):
         if not url:
@@ -2865,6 +3179,21 @@ class App:
             self.cfg.save()
         elif a == "connect":
             ConnectDialog(self)
+        elif a.startswith("sp_"):
+            self._set("stats_period", a[3:])
+        elif a.startswith("sl_"):
+            self._set("stats_list", a[3:])
+        elif a.startswith("sr"):  # en çok dinlenen: Spotify'da ara
+            sm, i = self._stats_summary(), int(a[2:])
+            if self.cfg["stats_list"] == "artists":
+                q = sm["top_a"][i][0] if i < len(sm["top_a"]) else ""
+            else:
+                q = " ".join(sm["top_t"][i][:2]) if i < len(sm["top_t"]) else ""
+            if q:
+                try:
+                    os.startfile("spotify:search:" + urllib.parse.quote(q))
+                except OSError:
+                    webbrowser.open("https://open.spotify.com/search/" + urllib.parse.quote(q))
         elif a.startswith("h"):  # son çalınan: Spotify'da ara
             items = self._recent_items(int(self.cfg["queue_rows"]))
             i = int(a[1:])
@@ -2980,6 +3309,7 @@ class App:
         for *_x, keys, key in HOTKEYS:
             hk.add_command(label=f"{keys}   {T(key)}", state="disabled")
         m.add_cascade(label=T("m_hotkeys"), menu=hk)
+        m.add_command(label=T("m_import"), command=self._import_data)
         self.v_lang = tk.StringVar(value=LANG)
         lg = sub()
         lg.add_radiobutton(label="Türkçe", value="tr", variable=self.v_lang,
