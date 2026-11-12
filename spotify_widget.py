@@ -1819,8 +1819,8 @@ class App:
         self.cfg.setdefault("osd", True)
         self.cfg.setdefault("duck_apps", ["discord.exe"])
         self.cfg.setdefault("alarm", {"on": False, "time": "08:00"})
-        self.level = 0.0          # Spotify'ın anlık ses seviyesi (0..1, otomatik kazançlı)
-        self._lvl_max = 0.3
+        self.level = 0.0          # Spotify'ın anlık ses seviyesi (0..1, son saniyelere göre)
+        self._lvl_lo = self._lvl_hi = None
         self._duck = None         # kısılmışken: {"orig": ses, "last": son konuşma zamanı}
         self._duck_fade = None
         self._alarm_day = None
@@ -2397,15 +2397,17 @@ class App:
             self.play_r = target_r
         # dalga
         target_amp = AMP if (playing and self.cfg["wave"] and not self.mini) else 0.0
-        if target_amp and self.cfg["react"]:  # müziğe tepki: dalga yüksekliği sese göre
-            target_amp = AMP * (0.35 + 1.45 * self.level)
+        react = bool(target_amp and self.cfg["react"])
+        if react:  # müziğe tepki: dalga yüksekliği sese göre (seviye zaten yumuşatılmış)
+            target_amp = AMP * (0.25 + 1.75 * self.level)
         if abs(self.amp - target_amp) > 0.05:
-            self.amp += (target_amp - self.amp) * min(1.0, dt * (14 if self.cfg["react"] else 6))
+            self.amp += (target_amp - self.amp) * min(1.0, dt * (30 if react else 6))
             animating = True
         else:
             self.amp = target_amp
         if self.amp > 0.05:
-            self.phase += dt * LAM / 1.4
+            # müziğe tepki açıkken dalga, ses yükseldikçe biraz daha hızlı akar
+            self.phase += dt * LAM / 1.4 * ((0.7 + 0.8 * self.level) if react else 1.0)
             animating = True
 
         self._render_all()
@@ -3138,12 +3140,25 @@ class App:
         # müziğe tepki veren dalga: Spotify'ın çıkış seviyesi (otomatik kazançla 0..1)
         if self.cfg["react"] and self.cfg["wave"] and playing and not self.mini:
             p = self.volume.peak(("spotify.exe",))
-            self._lvl_max = max(p, self._lvl_max * 0.995, 0.05)
-            target = min(1.0, (p / self._lvl_max) ** 0.8)
-            k = 0.6 if target > self.level else 0.25  # hızlı yüksel, yavaş düş
-            self.level += (target - self.level) * k
+            # Masterlanmış müzikte tepe değeri hep yüksek kalır; en yüksek değere göre
+            # ölçeklemek dalgayı sabit tutar. Bunun yerine son birkaç saniyenin
+            # en düşük–en yüksek aralığına göre ölçekle: vuruşlar 0↔1 arasında gidip gelir.
+            if self._lvl_lo is None:
+                self._lvl_lo, self._lvl_hi = p * 0.6, p
+            lo, hi = self._lvl_lo, self._lvl_hi
+            # kare hızından bağımsız olsun: 60 fps'teki bir kareye göre oran
+            last_t = getattr(self, "_lvl_t", None)
+            k = max(0.2, min(3.0, (now - last_t) * 60)) if last_t else 1.0
+            self._lvl_t = now
+            hi = max(p, hi + (lo - hi) * 0.015 * k)   # tavan yavaşça aşağı iner
+            lo = min(p, lo + (hi - lo) * 0.015 * k)   # taban yavaşça yukarı çıkar
+            self._lvl_lo, self._lvl_hi = lo, hi
+            target = 0.0 if p < 0.01 else min(1.0, max(0.0, (p - lo) / max(hi - lo, 0.04)))
+            f = (0.7 if target > self.level else 0.3) * k  # hızlı yüksel, yavaş düş
+            self.level += (target - self.level) * min(1.0, f)
         else:
             self.level *= 0.8
+            self._lvl_lo = None
 
         # Discord'da biri konuşunca Spotify'ı kıs, susunca geri aç
         if not self.cfg["duck"] or self.sleep_fade is not None or self._alarm_fade:
