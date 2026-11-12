@@ -102,10 +102,12 @@ IC_PREV, IC_NEXT = "\uE892", "\uE893"
 IC_SHUFFLE, IC_REPEAT, IC_REPEAT_ONE = "\uE8B1", "\uE8EE", "\uE8ED"
 IC_MUSIC, IC_OPEN = "\uE8D6", "\uE8A7"
 IC_DOWN, IC_UP = "\uE70D", "\uE70E"
+IC_CAL, IC_VOL, IC_MUTE, IC_ALARM = "\uE787", "\uE767", "\uE74F", "\uEA8F"
 
 REDIRECT_URI = "http://127.0.0.1:8888/callback"
 SCOPES = ("user-read-playback-state user-read-currently-playing "
-          "user-library-read user-library-modify")
+          "user-library-read user-library-modify user-modify-playback-state")
+UA = "SpotifyDesktopWidget/1.0 (+https://lrclib.net)"
 
 
 # ------------------------------------------------------------------ dil
@@ -117,7 +119,7 @@ STRINGS = {
         "waiting_title": "Spotify bekleniyor", "waiting_sub": "Spotify'ı aç ve bir şarkı çal",
         "mini_waiting_sub": "Spotify'ı aç", "mini_offline": "Spotify kapalı · aç",
         "unknown": "Bilinmeyen",
-        "tab_queue": "Sıradaki", "tab_recent": "Son çalınanlar",
+        "tab_queue": "Sıradaki", "tab_recent": "Geçmiş",
         "connect_line1": "Sıradaki şarkıları görmek için", "connect_line2": "Spotify hesabını bağla.",
         "connect_btn": "Bağla", "loading": "Yükleniyor…", "queue_empty": "Sırada şarkı yok",
         "recent_empty": "Henüz çalınan şarkı yok",
@@ -137,6 +139,35 @@ STRINGS = {
         "imp_fail": "İçe aktarılamadı: {e}",
         "imp_hint": ("Spotify > Hesap > Gizlilik ayarları > \"Verilerini indir\" ile aldığın "
                      ".zip dosyasını ya da içindeki StreamingHistory .json dosyalarını seç."),
+        # v8
+        "tab_lyrics": "Sözler", "ly_loading": "Sözler aranıyor…", "ly_none": "Sözler bulunamadı",
+        "ly_instr": "♪ Enstrümantal", "ly_plain": "Senkronize değil", "ly_err": "Sözler alınamadı",
+        "sl_hours": "Saat", "st_hours": "DİNLEME SAATLERİ", "st_streak": "Rekor: {n} gün",
+        "st_days": "{n} gün", "st_streak_v": "{n} gün seri", "since": "{d}'den beri",
+        "months_full": "Ocak Şubat Mart Nisan Mayıs Haziran Temmuz Ağustos Eylül Ekim Kasım Aralık",
+        "lastyear": "Geçen yıl bugün", "wrap_btn": "★ Özet",
+        "wr_title": "{y} Özeti", "wr_total": "toplam dinleme", "wr_plays": "çalma",
+        "wr_artists": "EN ÇOK DİNLENEN SANATÇILAR", "wr_tracks": "EN ÇOK DİNLENEN ŞARKILAR",
+        "wr_month": "En yoğun ay", "wr_day": "En sevdiğin gün", "wr_hour": "En sevdiğin saat",
+        "wr_streak": "En uzun seri", "wr_copy": "Panoya kopyala", "wr_save": "Kaydet…",
+        "wr_copied": "Görsel panoya kopyalandı",
+        "weekdays": "Pazartesi Salı Çarşamba Perşembe Cuma Cumartesi Pazar",
+        "m_react": "Müziğe tepki veren dalga", "m_duck": "Discord'da konuşulunca Spotify'ı kıs",
+        "m_osd": "Kısayolda ekran göstergesi",
+        "osd_play": "Çalıyor", "osd_pause": "Duraklatıldı", "osd_vol": "Ses",
+        "m_search": "Şarkı ara…  (Ctrl+Alt+S)", "hk_search": "Şarkı ara",
+        "s_title": "Şarkı ara", "s_hint": "Şarkı, sanatçı ya da albüm yaz ve Enter'a bas",
+        "s_play": "Çal", "s_queue": "Sıraya ekle", "s_none": "Sonuç yok", "s_queued": "Sıraya eklendi ✓",
+        "s_need": "Bu özellik için Spotify hesabını bağla.",
+        "s_premium": "Spotify bunun için Premium istiyor; şarkı Spotify'da açıldı.",
+        "m_devices": "Cihaza aktar", "dev_none": "Açık cihaz yok", "dev_err": "Cihazlar alınamadı",
+        "m_share": "Şarkıyı paylaş", "sh_link": "Bağlantıyı kopyala", "sh_card": "Paylaşım kartını kopyala",
+        "sh_link_ok": "Bağlantı panoya kopyalandı", "sh_card_ok": "Kart panoya kopyalandı ve kaydedildi",
+        "m_alarm": "Alarm", "al_on": "Alarm açık", "al_set": "Saati ayarla…  ({t})",
+        "al_title": "Alarm", "al_text": "Bu saatte Spotify açılır ve ses yavaşça açılarak çalmaya başlar.\n"
+                                         "(Bilgisayar açık ve widget çalışıyor olmalı.)",
+        "al_save": "Kaydet", "al_fired": "Günaydın! Alarm çalıyor",
+        "need_scope": "Bu özellik için hesabı bir kez yeniden bağla (yeni izin gerekiyor).",
         "m_accent": "Renk", "ac_auto": "Albüm kapağından", "ac_green": "Yeşil",
         "ac_blue": "Mavi", "ac_purple": "Mor", "ac_pink": "Pembe", "ac_red": "Kırmızı",
         "ac_orange": "Turuncu", "ac_teal": "Turkuaz", "ac_mono": "Gri",
@@ -181,7 +212,7 @@ STRINGS = {
                       "      {uri}\n"
                       "3. \"Web API\" kutusunu işaretle ve kaydet.\n"
                       "4. Uygulamanın \"Client ID\" değerini aşağıya yapıştır ve Bağla'ya bas."),
-        "dlg_reauth": "Beğen butonu için hesabı bir kez yeniden bağla (yeni izin gerekiyor).",
+        "dlg_reauth": "Yeni özellikler için hesabı bir kez yeniden bağla (yeni izin gerekiyor).",
         "dlg_dev": "Developer panelini aç", "dlg_copy": "Redirect URI'yi kopyala",
         "dlg_copied": "Redirect URI panoya kopyalandı.",
         "dlg_invalid": "Geçerli bir Client ID yapıştır.", "dlg_ok": "Bağlandı ✓",
@@ -194,7 +225,7 @@ STRINGS = {
         "waiting_title": "Waiting for Spotify", "waiting_sub": "Open Spotify and play a song",
         "mini_waiting_sub": "Open Spotify", "mini_offline": "Spotify closed · open",
         "unknown": "Unknown",
-        "tab_queue": "Up next", "tab_recent": "Recently played",
+        "tab_queue": "Up next", "tab_recent": "History",
         "connect_line1": "Connect your Spotify account", "connect_line2": "to see what's up next.",
         "connect_btn": "Connect", "loading": "Loading…", "queue_empty": "Queue is empty",
         "recent_empty": "Nothing played yet",
@@ -214,6 +245,36 @@ STRINGS = {
         "imp_fail": "Import failed: {e}",
         "imp_hint": ("Pick the .zip from Spotify > Account > Privacy settings > "
                      "\"Download your data\", or the StreamingHistory .json files inside it."),
+        "tab_lyrics": "Lyrics", "ly_loading": "Looking for lyrics…", "ly_none": "No lyrics found",
+        "ly_instr": "♪ Instrumental", "ly_plain": "Not synced", "ly_err": "Couldn't load lyrics",
+        "sl_hours": "Hours", "st_hours": "LISTENING HOURS", "st_streak": "Best: {n} days",
+        "st_days": "{n} days", "st_streak_v": "{n}-day streak", "since": "since {d}",
+        "months_full": ("January February March April May June July August September October "
+                        "November December"),
+        "lastyear": "On this day last year", "wrap_btn": "★ Recap",
+        "wr_title": "{y} Recap", "wr_total": "total listening", "wr_plays": "plays",
+        "wr_artists": "TOP ARTISTS", "wr_tracks": "TOP SONGS",
+        "wr_month": "Busiest month", "wr_day": "Favorite day", "wr_hour": "Favorite hour",
+        "wr_streak": "Longest streak", "wr_copy": "Copy to clipboard", "wr_save": "Save…",
+        "wr_copied": "Image copied to clipboard",
+        "weekdays": "Monday Tuesday Wednesday Thursday Friday Saturday Sunday",
+        "m_react": "Wave reacts to music", "m_duck": "Lower Spotify when someone talks on Discord",
+        "m_osd": "On-screen display for shortcuts",
+        "osd_play": "Playing", "osd_pause": "Paused", "osd_vol": "Volume",
+        "m_search": "Search songs…  (Ctrl+Alt+S)", "hk_search": "Search songs",
+        "s_title": "Search songs", "s_hint": "Type a song, artist or album and press Enter",
+        "s_play": "Play", "s_queue": "Add to queue", "s_none": "No results", "s_queued": "Added to queue ✓",
+        "s_need": "Connect your Spotify account to use this.",
+        "s_premium": "Spotify requires Premium for this; opened the song in Spotify.",
+        "m_devices": "Transfer to device", "dev_none": "No active devices",
+        "dev_err": "Couldn't load devices",
+        "m_share": "Share song", "sh_link": "Copy link", "sh_card": "Copy share card",
+        "sh_link_ok": "Link copied to clipboard", "sh_card_ok": "Card copied to clipboard and saved",
+        "m_alarm": "Alarm", "al_on": "Alarm on", "al_set": "Set time…  ({t})",
+        "al_title": "Alarm", "al_text": "At this time Spotify opens and starts playing, fading the volume in.\n"
+                                         "(The PC must be on and the widget running.)",
+        "al_save": "Save", "al_fired": "Good morning! Alarm playing",
+        "need_scope": "Reconnect your account once to use this (needs a new permission).",
         "m_accent": "Color", "ac_auto": "From album art", "ac_green": "Green",
         "ac_blue": "Blue", "ac_purple": "Purple", "ac_pink": "Pink", "ac_red": "Red",
         "ac_orange": "Orange", "ac_teal": "Teal", "ac_mono": "Gray",
@@ -256,7 +317,7 @@ STRINGS = {
                       "      {uri}\n"
                       "3. Tick \"Web API\" and save.\n"
                       "4. Paste the app's \"Client ID\" below and click Connect."),
-        "dlg_reauth": "Reconnect once to use the Like button (needs a new permission).",
+        "dlg_reauth": "Reconnect once to use the new features (needs a new permission).",
         "dlg_dev": "Open Developer dashboard", "dlg_copy": "Copy Redirect URI",
         "dlg_copied": "Redirect URI copied to clipboard.",
         "dlg_invalid": "Paste a valid Client ID.", "dlg_ok": "Connected ✓",
@@ -328,7 +389,8 @@ def import_spotify_history(paths):
                 title = None
         if not title or not artist or when is None or ms <= 0:
             continue  # podcast, sesli kitap, bozuk kayıt
-        day = when.astimezone().date().isoformat()
+        local = when.astimezone()
+        day = local.date().isoformat()
         sec = ms / 1000.0
         ai = a_idx.get(artist)
         if ai is None:
@@ -339,8 +401,10 @@ def import_spotify_history(paths):
         if ti is None:
             ti = t_idx[tk_] = len(tracks)
             tracks.append([title, ai])
-        d = days.setdefault(day, {"s": 0.0, "p": 0, "a": {}, "t": {}})
+        d = days.setdefault(day, {"s": 0.0, "p": 0, "a": {}, "t": {}, "h": {}})
         d["s"] += sec
+        hr = str(local.hour)
+        d["h"][hr] = d["h"].get(hr, 0.0) + sec
         if ms >= 30000:  # Spotify 30 sn'yi bir dinleme sayar
             d["p"] += 1
         d["a"][ai] = d["a"].get(ai, 0.0) + sec
@@ -355,7 +419,8 @@ def import_spotify_history(paths):
         d["s"] = round(d["s"], 1)
         d["a"] = {str(k): round(v, 1) for k, v in d["a"].items()}
         d["t"] = {str(k): round(v, 1) for k, v in d["t"].items()}
-    data = {"version": 1, "first": first, "last": last, "artists": artists, "tracks": tracks,
+        d["h"] = {k: round(v, 1) for k, v in d["h"].items()}
+    data = {"version": 2, "first": first, "last": last, "artists": artists, "tracks": tracks,
             "days": days}
     with open(STATS_IMPORT_PATH, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, separators=(",", ":"))
@@ -371,7 +436,7 @@ def load_imported_history():
         tnames = [f"{t}\t{artists[a]}" for t, a in tracks]
         out = {}
         for day, d in data["days"].items():
-            out[day] = {"sec": d["s"], "plays": d["p"],
+            out[day] = {"sec": d["s"], "plays": d["p"], "hours": d.get("h", {}),
                         "artists": {artists[int(k)]: v for k, v in d["a"].items()},
                         "tracks": {tnames[int(k)]: v for k, v in d["t"].items()}}
         return out
@@ -632,6 +697,7 @@ class AppVolume:
     def __init__(self, exe="spotify.exe"):
         self.exe = exe
         self._cache = (0.0, [])
+        self._all = (0.0, [])   # (zaman, [(süreç adı, ses seviyesi ölçer)])
 
     def _sessions(self):
         t, ss = self._cache
@@ -646,6 +712,36 @@ class AppVolume:
             ss = []
         self._cache = (time.monotonic(), ss)
         return ss
+
+    def _meters(self):
+        t, ms = self._all
+        if time.monotonic() - t < 3:
+            return ms
+        ms = []
+        try:
+            from pycaw.pycaw import AudioUtilities, IAudioMeterInformation
+            for s in AudioUtilities.GetAllSessions():
+                if s.Process:
+                    try:
+                        ms.append((s.Process.name().lower(),
+                                   s._ctl.QueryInterface(IAudioMeterInformation)))
+                    except Exception:  # noqa: BLE001
+                        pass
+        except Exception as e:  # noqa: BLE001
+            log("ses ölçerleri okunamadı:", repr(e))
+        self._all = (time.monotonic(), ms)
+        return ms
+
+    def peak(self, names):
+        """Verilen süreçlerin o anki en yüksek çıkış seviyesi (0..1)."""
+        best = 0.0
+        for name, m in self._meters():
+            if name in names:
+                try:
+                    best = max(best, float(m.GetPeakValue()))
+                except Exception:  # noqa: BLE001
+                    self._all = (0.0, [])
+        return best
 
     def get(self):
         for _ in range(2):
@@ -676,6 +772,7 @@ HOTKEYS = (  # (kimlik, değiştirici, tuş, eylem, tuş adı, metin anahtarı)
     (3, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, 0x25, "prev", "Ctrl+Alt+←", "hk_prev"),
     (4, MOD_CONTROL | MOD_ALT, 0x26, "vol+", "Ctrl+Alt+↑", "hk_volup"),
     (5, MOD_CONTROL | MOD_ALT, 0x28, "vol-", "Ctrl+Alt+↓", "hk_voldown"),
+    (6, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, 0x53, "search", "Ctrl+Alt+S", "hk_search"),
 )
 
 
@@ -1149,6 +1246,8 @@ class MediaWorker:
                     await s.try_toggle_play_pause_async()
                 elif name == "pause":
                     await s.try_pause_async()
+                elif name == "play":
+                    await s.try_play_async()
                 elif name == "next":
                     await s.try_skip_next_async()
                 elif name == "prev":
@@ -1169,6 +1268,105 @@ class MediaWorker:
             self._wake.set()
 
         asyncio.run_coroutine_threadsafe(go(), self.loop)
+
+
+# ------------------------------------------------------------------ şarkı sözleri (LRCLIB)
+class Lyrics:
+    """lrclib.net'ten senkronize sözler. lines(): [(saniye ya da None, metin)]."""
+
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.key = None
+        self.state = None       # loading / ok / none / instr / err
+        self.synced = False
+        self._lines = []
+        self.version = 0
+        self.cache = {}
+
+    def lines(self):
+        with self.lock:
+            return self._lines
+
+    def request(self, title, artist, album, dur):
+        key = (title, artist)
+        if not title or key == self.key:
+            return
+        self.key = key
+        if key in self.cache:
+            self._apply(key, *self.cache[key])
+            return
+        with self.lock:
+            self.state, self._lines = "loading", []
+            self.version += 1
+        threading.Thread(target=self._fetch, args=(key, album, dur), daemon=True).start()
+
+    def _apply(self, key, state, synced, lines):
+        with self.lock:
+            if key != self.key:
+                return
+            self.state, self.synced, self._lines = state, synced, lines
+            self.version += 1
+
+    @staticmethod
+    def _get(path, params):
+        url = "https://lrclib.net/api" + path + "?" + urllib.parse.urlencode(params)
+        req = urllib.request.Request(url, headers={"User-Agent": UA})
+        with urllib.request.urlopen(req, timeout=12) as r:
+            return json.loads(r.read().decode())
+
+    @staticmethod
+    def parse(text):
+        out = []
+        for raw in (text or "").splitlines():
+            stamps, rest = [], raw
+            while rest.startswith("[") and "]" in rest:
+                tag, rest = rest[1:].split("]", 1)
+                try:
+                    mm, ss = tag.split(":", 1)
+                    stamps.append(int(mm) * 60 + float(ss))
+                except ValueError:
+                    break
+            for t in stamps:
+                out.append((t, rest.strip()))
+        out.sort(key=lambda x: x[0])
+        return out
+
+    def _fetch(self, key, album, dur):
+        title, artist = key
+        artist1 = artist.split(", ")[0]
+        res = None
+        try:
+            try:
+                p = {"track_name": title, "artist_name": artist1}
+                if album:
+                    p["album_name"] = album
+                if dur:
+                    p["duration"] = int(round(dur))
+                res = self._get("/get", p)
+            except urllib.error.HTTPError as e:
+                if e.code != 404:
+                    raise
+                found = self._get("/search", {"track_name": title, "artist_name": artist1})
+                found = [f for f in found if f.get("syncedLyrics")] or found
+                res = found[0] if found else None
+        except Exception as e:  # noqa: BLE001
+            log("sözler alınamadı:", repr(e))
+            self._apply(key, "err", False, [])  # önbelleğe alma: sonra tekrar denensin
+            return
+        if not res:
+            r = ("none", False, [])
+        elif res.get("instrumental"):
+            r = ("instr", False, [])
+        elif res.get("syncedLyrics"):
+            r = ("ok", True, self.parse(res["syncedLyrics"]))
+        elif res.get("plainLyrics"):
+            r = ("ok", False, [(None, ln.strip()) for ln in res["plainLyrics"].splitlines()])
+        else:
+            r = ("none", False, [])
+        if len(self.cache) > 60:
+            self.cache.clear()
+        self.cache[key] = r
+        self._apply(key, *r)
 
 
 # ------------------------------------------------------------------ Spotify Web API (sıradaki)
@@ -1250,13 +1448,56 @@ class SpotifyWeb:
         if changed:
             self.cfg.save()
 
-    def _api(self, path, method="GET"):
+    def _api(self, path, method="GET", body=None):
         self._ensure_token()
+        headers = {"Authorization": "Bearer " + self.access}
+        data = None
+        if body is not None:
+            data = json.dumps(body).encode()
+            headers["Content-Type"] = "application/json"
+        elif method in ("PUT", "POST"):
+            data = b""
         req = urllib.request.Request("https://api.spotify.com/v1" + path, method=method,
-                                     headers={"Authorization": "Bearer " + self.access})
+                                     headers=headers, data=data)
         with urllib.request.urlopen(req, timeout=15) as r:
-            body = r.read()
-            return json.loads(body.decode()) if body else {}
+            raw = r.read()
+            try:
+                return json.loads(raw.decode()) if raw else {}
+            except ValueError:
+                return {}
+
+    # -- arama, çalma, sıra, cihazlar
+    @property
+    def has_control(self):
+        return "user-modify-playback-state" in (self.cfg.get("scopes") or "")
+
+    def search(self, q):
+        r = self._api("/search?" + urllib.parse.urlencode({"q": q, "type": "track",
+                                                            "limit": 8}))
+        out = []
+        for it in (r.get("tracks") or {}).get("items") or []:
+            imgs = (it.get("album") or {}).get("images") or []
+            out.append({"id": it.get("id"), "uri": it.get("uri"), "name": it.get("name", ""),
+                        "artist": ", ".join(a.get("name", "") for a in it.get("artists") or []),
+                        "dur": (it.get("duration_ms") or 0) / 1000,
+                        "img": min(imgs, key=lambda i: i.get("width") or 9999)["url"]
+                        if imgs else None})
+        return out
+
+    def play_uri(self, uri):
+        self._api("/me/player/play", "PUT", {"uris": [uri]})
+
+    def queue_uri(self, uri):
+        self._api("/me/player/queue?uri=" + urllib.parse.quote(uri), "POST")
+        self.wake.set()
+
+    def devices(self):
+        return [{"id": d.get("id"), "name": d.get("name", "?"), "type": d.get("type", ""),
+                 "active": bool(d.get("is_active"))}
+                for d in (self._api("/me/player/devices").get("devices") or []) if d.get("id")]
+
+    def transfer(self, device_id):
+        self._api("/me/player", "PUT", {"device_ids": [device_id], "play": True})
 
     # -- Beğen (kütüphane)
     @property
@@ -1494,11 +1735,23 @@ class App:
         self.cfg.setdefault("list_tab", "queue")
         self.cfg.setdefault("accent", "auto")
         self.cfg.setdefault("bg", "solid")
+        self.cfg.setdefault("react", True)
+        self.cfg.setdefault("duck", True)
+        self.cfg.setdefault("osd", True)
+        self.cfg.setdefault("duck_apps", ["discord.exe"])
+        self.cfg.setdefault("alarm", {"on": False, "time": "08:00"})
+        self.level = 0.0          # Spotify'ın anlık ses seviyesi (0..1, otomatik kazançlı)
+        self._lvl_max = 0.3
+        self._duck = None         # kısılmışken: {"orig": ses, "last": son konuşma zamanı}
+        self._duck_fade = None
+        self._alarm_day = None
+        self._alarm_fade = None
         self.cfg.setdefault("stats_period", "7")
         self.cfg.setdefault("stats_list", "artists")
         self.stats = self._load_stats()
         self.imported = load_imported_history()   # Spotify'dan içe aktarılan geçmiş
         self.import_ver = 0
+        self._index_imported()
         self._stat_t = None
         self._stat_saved = time.monotonic()
         self._glass = {}         # bulanık duvar kağıdı önbelleği
@@ -1543,6 +1796,7 @@ class App:
 
         self.media = MediaWorker()
         self.web = SpotifyWeb(self.cfg)
+        self.lyrics = Lyrics()
 
         # durum
         self.light = self._is_light()
@@ -1654,6 +1908,20 @@ class App:
         cur = (v.get("title"), v.get("artist"))
         return [h for h in self.history if (h["title"], h["artist"]) != cur][:rows]
 
+    def _recent_rows(self, rows):
+        """Geçmiş sekmesinin satırları: varsa en üstte 'geçen yıl bugün', sonra son çalınanlar.
+        Her satır: title, sub, thumb, right, q (Spotify'da aranacak metin)."""
+        out = []
+        ly = self._last_year_today()
+        if ly:
+            title, artist, sec = ly
+            out.append({"title": T("lastyear"), "sub": f"{title} · {artist}", "thumb": "cal",
+                        "right": fmt_dur(sec), "q": f"{title} {artist}"})
+        for h in self._recent_items(rows - len(out)):
+            out.append({"title": h["title"], "sub": h["artist"], "thumb": self._hist_thumb(h),
+                        "right": time_ago(h.get("t", 0)), "q": f'{h["title"]} {h["artist"]}'})
+        return out
+
     def _hist_thumb(self, h):
         key = (h["title"], h["artist"], h.get("t"), self.S)
         th = self._hist_thumbs.get(key)
@@ -1698,7 +1966,8 @@ class App:
             "time": font("segoeui.ttf", 12), "qhead": font("seguisb.ttf", 15),
             "qtitle": font("segoeui.ttf", 14), "qsub": font("segoeui.ttf", 12),
             "btn": font("seguisb.ttf", 13), "body": font("segoeui.ttf", 13),
-            "mtitle": font("seguisb.ttf", 15),
+            "mtitle": font("seguisb.ttf", 15), "tiny": font("segoeui.ttf", 10),
+            "lyric": font("seguisb.ttf", 15), "big": font("seguisb.ttf", 34),
         }
         self._icon_fonts = {}
         self.qthumbs.clear()
@@ -1803,6 +2072,15 @@ class App:
             os.startfile(uri)
         except OSError:
             webbrowser.open("https://open.spotify.com/search/" + urllib.parse.quote(query))
+
+    @staticmethod
+    def _spotify_search(q):
+        if not q:
+            return
+        try:
+            os.startfile("spotify:search:" + urllib.parse.quote(q))
+        except OSError:
+            webbrowser.open("https://open.spotify.com/search/" + urllib.parse.quote(q))
 
     def _win_pos(self):
         r = wintypes.RECT()
@@ -1954,6 +2232,10 @@ class App:
         self.st = st
         playing = self._playing()
         self._stat_tick(now, st, playing)
+        if st.get("ok") and self.cfg["list_tab"] == "lyrics" and self.cfg["show_queue"]:
+            self.lyrics.request(st.get("title"), st.get("artist"), st.get("album"), st.get("end"))
+        self._audio_tick(now, st, playing)
+        self._alarm_tick(st)
         if st.get("ok"):
             self.web.notify((st["title"], st["artist"]), playing)
             if st.get("title") and (st.get("art_changed") or self.last is None
@@ -1983,8 +2265,12 @@ class App:
                 self._change_volume(0.05)
             elif act == "vol-":
                 self._change_volume(-0.05)
+            elif act == "search":
+                SearchDialog(self)
+                continue
             else:
                 self._action(act)
+            self._hotkey_osd(act)
 
         # uyku zamanlayıcısı (son 20 saniyede ses yavaşça kısılır)
         if self.sleep_end is not None:
@@ -2036,8 +2322,10 @@ class App:
             self.play_r = target_r
         # dalga
         target_amp = AMP if (playing and self.cfg["wave"] and not self.mini) else 0.0
+        if target_amp and self.cfg["react"]:  # müziğe tepki: dalga yüksekliği sese göre
+            target_amp = AMP * (0.35 + 1.45 * self.level)
         if abs(self.amp - target_amp) > 0.05:
-            self.amp += (target_amp - self.amp) * min(1.0, dt * 6)
+            self.amp += (target_amp - self.amp) * min(1.0, dt * (14 if self.cfg["react"] else 6))
             animating = True
         else:
             self.amp = target_amp
@@ -2199,7 +2487,10 @@ class App:
             return
         d = self._stat_day()
         d["sec"] += delta
-        artist = (st.get("artist") or "").split(", ")[0].strip() or T("unknown")
+        hr = str(time.localtime().tm_hour)
+        hs = d.setdefault("hours", {})
+        hs[hr] = hs.get(hr, 0.0) + delta
+        artist =(st.get("artist") or "").split(", ")[0].strip() or T("unknown")
         d["artists"][artist] = d["artists"].get(artist, 0.0) + delta
         if st.get("title"):
             tkey = f'{st["title"]}\t{artist}'
@@ -2207,6 +2498,272 @@ class App:
             tr[tkey] = tr.get(tkey, 0.0) + delta
         if now - self._stat_saved > 30:
             self._save_stats()
+
+    def _index_imported(self):
+        """İçe aktarılan geçmişten bir kerelik çıkarımlar: sanatçıyı ilk dinleme günü."""
+        first = {}
+        for k in sorted(self.imported):
+            for a in self.imported[k].get("artists", {}):
+                if a not in first:
+                    first[a] = k
+        self.first_seen = first
+        self._streak_cache = None
+
+    def _since(self, artist):
+        k = self.first_seen.get(artist)
+        if not k:
+            for day in sorted(self.stats["days"]):
+                if artist in self.stats["days"][day].get("artists", {}):
+                    k = day
+                    break
+        if not k:
+            return ""
+        return T("since", d=f"{T('months').split()[int(k[5:7]) - 1]} {k[:4]}")
+
+    def _streaks(self):
+        """(şu anki seri, en uzun seri): en az 1 dakika müzik dinlenen ardışık günler."""
+        today = date.today()
+        ck = (today, self.import_ver, len(self.stats["days"]),
+              (self._stat_get(today.isoformat()) or {}).get("sec", 0) >= 60)
+        if self._streak_cache and self._streak_cache[0] == ck:
+            return self._streak_cache[1]
+        days = sorted(k for k in set(self.imported) | set(self.stats["days"])
+                      if (self._stat_get(k) or {}).get("sec", 0) >= 60)
+        best = run = 0
+        prev = None
+        for k in days:
+            d = date.fromisoformat(k)
+            run = run + 1 if prev is not None and (d - prev).days == 1 else 1
+            best = max(best, run)
+            prev = d
+        cur = 0
+        if prev is not None and (today - prev).days <= 1:  # bugün ya da dün dinlendiyse sürüyor
+            cur = run
+        res = (cur, best)
+        self._streak_cache = (ck, res)
+        return res
+
+    def _last_year_today(self):
+        """Geçen yıl bugün en çok dinlenen şarkı: (şarkı, sanatçı, saniye) ya da None."""
+        t = date.today()
+        try:
+            ly = t.replace(year=t.year - 1)
+        except ValueError:  # 29 Şubat
+            ly = t.replace(year=t.year - 1, day=28)
+        d = self._stat_get(ly.isoformat())
+        if not d or not d.get("tracks"):
+            return None
+        name, sec = max(d["tracks"].items(), key=lambda kv: kv[1])
+        title, _s, artist = name.partition("\t")
+        return title, artist, sec
+
+    def _year_data(self, year):
+        y = str(year)
+        total = plays = 0.0
+        artists, tracks = {}, {}
+        months, wdays, hours = [0.0] * 12, [0.0] * 7, [0.0] * 24
+        good = []
+        for k in set(self.imported) | set(self.stats["days"]):
+            if not k.startswith(y):
+                continue
+            d = self._stat_get(k) or {}
+            sec = d.get("sec", 0.0)
+            total += sec
+            plays += d.get("plays", 0)
+            months[int(k[5:7]) - 1] += sec
+            wdays[date.fromisoformat(k).weekday()] += sec
+            for h, v in (d.get("hours") or {}).items():
+                hours[int(h)] += v
+            for a, v in d.get("artists", {}).items():
+                artists[a] = artists.get(a, 0.0) + v
+            for t, v in d.get("tracks", {}).items():
+                tracks[t] = tracks.get(t, 0.0) + v
+            if sec >= 60:
+                good.append(date.fromisoformat(k))
+        best = run = 0
+        prev = None
+        for dd in sorted(good):
+            run = run + 1 if prev is not None and (dd - prev).days == 1 else 1
+            best = max(best, run)
+            prev = dd
+        return {"total": total, "plays": int(plays), "months": months, "wdays": wdays,
+                "hours": hours, "streak": best,
+                "artists": sorted(artists.items(), key=lambda kv: -kv[1])[:5],
+                "tracks": sorted(tracks.items(), key=lambda kv: -kv[1])[:5]}
+
+    def _render_recap(self, year):
+        """Wrapped tarzı yıllık özet görseli (paylaşılabilir, 2x çözünürlük)."""
+        yd = self._year_data(year)
+        P = self.pal
+        S = 2.0
+        X = lambda v: v * S  # noqa: E731
+
+        def font(name, px):
+            return TextFont(name, px, S, bold=(name == "seguisb.ttf"))
+
+        f = {"cap": font("seguisb.ttf", 12), "big": font("seguisb.ttf", 46),
+             "mid": font("seguisb.ttf", 17), "row": font("segoeui.ttf", 15),
+             "rowb": font("seguisb.ttf", 15), "sub": font("segoeui.ttf", 12),
+             "num": font("seguisb.ttf", 15)}
+        Wd, Hd = 420, 760
+        img = Image.new("RGBA", (round(X(Wd)), round(X(Hd))), P["surface"] + (255,))
+        # üstte birincil renkten yüzeye geçen degrade
+        top = Image.new("RGBA", img.size, P["primary_container"] + (255,))
+        mask = Image.linear_gradient("L").resize(img.size).point(lambda v: 255 - v)
+        img.paste(top, (0, 0), mask.point(lambda v: int(v * 0.85)))
+        d = Drawer(img)
+        on, var, pri = P["on_surface"] + (255,), P["on_surface_variant"] + (255,), \
+            P["primary"] + (255,)
+        x0 = 28
+        d.text((X(x0), X(34)), T("wr_title", y=year).upper(), font=f["cap"], fill=pri,
+               anchor="lm")
+        hours_txt = fmt_dur(yd["total"])
+        d.text((X(x0), X(84)), hours_txt, font=f["big"], fill=on, anchor="lm")
+        d.text((X(x0), X(122)), f'{T("wr_total")}  ·  '
+               f'{yd["plays"]:,}'.replace(",", ".") + f' {T("wr_plays")}', font=f["sub"],
+               fill=var, anchor="lm")
+
+        def section(y, title, rows, fmt_name):
+            d.text((X(x0), X(y)), title, font=f["cap"], fill=pri, anchor="lm")
+            best = rows[0][1] if rows else 1.0
+            for i, (name, sec) in enumerate(rows):
+                ry = y + 30 + i * 32
+                d.text((X(x0), X(ry)), str(i + 1), font=f["num"], fill=pri, anchor="lm")
+                main, sub = fmt_name(name)
+                dur = fmt_dur(sec)
+                avail = X(Wd - x0 - 24 - 30) - f["sub"].getlength(dur) - X(10)
+                t1 = fit_text(main, f["rowb"], avail)
+                d.text((X(x0 + 24), X(ry - 1)), t1, font=f["rowb"], fill=on, anchor="lm")
+                rest = avail - f["rowb"].getlength(t1)
+                if sub and rest > X(40):
+                    d.text((X(x0 + 24) + f["rowb"].getlength(t1), X(ry)),
+                           fit_text(" · " + sub, f["sub"], rest), font=f["sub"], fill=var,
+                           anchor="lm")
+                d.text((X(Wd - x0), X(ry)), dur, font=f["sub"], fill=var, anchor="rm")
+                rr(img, X(x0 + 24), X(ry + 12), X(Wd - x0), X(ry + 14), X(1), P["on_surface"],
+                   alpha=18)
+                rr(img, X(x0 + 24), X(ry + 12), X(x0 + 24 + (Wd - 2 * x0 - 24) * sec / best),
+                   X(ry + 14), X(1), P["primary"], alpha=210)
+            return y + 30 + 5 * 32
+
+        y = section(170, T("wr_artists"), yd["artists"], lambda n: (n, ""))
+        y = section(y + 12, T("wr_tracks"), yd["tracks"],
+                    lambda n: (n.partition("\t")[0], n.partition("\t")[2]))
+        months = T("months_full").split()
+        wnames = T("weekdays").split()
+        facts = [
+            (T("wr_month"), months[max(range(12), key=lambda i: yd["months"][i])]
+             if yd["total"] else "–"),
+            (T("wr_day"), wnames[max(range(7), key=lambda i: yd["wdays"][i])]
+             if yd["total"] else "–"),
+            (T("wr_hour"), f'{max(range(24), key=lambda i: yd["hours"][i]):02d}:00'
+             if any(yd["hours"]) else "–"),
+            (T("wr_streak"), T("st_days", n=yd["streak"])),
+        ]
+        tw, th = (Wd - 2 * x0 - 10) / 2, 62
+        for i, (lbl, val) in enumerate(facts):
+            tx = x0 + (i % 2) * (tw + 10)
+            ty = y + 14 + (i // 2) * (th + 10)
+            rr(img, X(tx), X(ty), X(tx + tw), X(ty + th), X(16), P["surface_high"])
+            d.text((X(tx + 14), X(ty + 22)), fit_text(val, f["mid"], X(tw - 24)), font=f["mid"],
+                   fill=on, anchor="lm")
+            d.text((X(tx + 14), X(ty + 44)), lbl, font=f["sub"], fill=var, anchor="lm")
+        h = y + 14 + 2 * (th + 10) + 18
+        return img.crop((0, 0, img.width, round(X(h)))).convert("RGB")
+
+    def _share_link(self):
+        st = self._view()
+        cur = self.web.current
+        if cur and cur.get("id") and cur.get("name") == st.get("title"):
+            url = "https://open.spotify.com/track/" + cur["id"]
+        else:
+            url = "https://open.spotify.com/search/" + urllib.parse.quote(
+                f'{st.get("title", "")} {st.get("artist", "")}'.strip())
+        self.root.clipboard_clear()
+        self.root.clipboard_append(url)
+        self.toast.show_message("", T("sh_link_ok"))  # bağlantı simgesi
+
+    def _share_card(self):
+        """Kapak + şarkı adı ile 1080x1350 paylaşım kartı: panoya kopyalar ve Resimler'e kaydeder."""
+        from PIL import ImageFilter
+        st = self._view()
+        if not st.get("title"):
+            return
+        P, S = self.pal, 1080 / 400
+        X = lambda v: v * S  # noqa: E731
+        Wd, Hd = 400, 500
+        img = Image.new("RGB", (1080, 1350), P["surface"])
+        if self.art_src is not None:  # bulanık kapak arka planı
+            bgi = self.art_src.resize((1350, 1350), Image.Resampling.BILINEAR).crop(
+                (135, 0, 1215, 1350)).filter(ImageFilter.GaussianBlur(60))
+            img = Image.blend(bgi, Image.new("RGB", img.size, P["surface"]), 0.45)
+        img = img.convert("RGBA")
+        d = Drawer(img)
+        asz = 280
+        ax, ay = (Wd - asz) / 2, 50
+        if self.art_src is not None:
+            art = rounded_image(self.art_src, round(X(asz)), X(26))
+            shadow = Image.new("RGBA", img.size, (0, 0, 0, 0))
+            rr(shadow, X(ax), X(ay + 10), X(ax + asz), X(ay + asz + 10), X(26), (0, 0, 0),
+               alpha=110)
+            img.alpha_composite(shadow.filter(ImageFilter.GaussianBlur(30)))
+            img.alpha_composite(art, (round(X(ax)), round(X(ay))))
+        else:
+            rr(img, X(ax), X(ay), X(ax + asz), X(ay + asz), X(26), P["surface_highest"])
+
+        def font(name, px):
+            return TextFont(name, px, S, bold=(name == "seguisb.ttf"))
+
+        ft, fa, fc = font("seguisb.ttf", 24), font("segoeui.ttf", 16), font("seguisb.ttf", 11)
+        y = ay + asz + 40
+        for line in wrap_text(st["title"], ft, X(Wd - 60), 2):
+            d.text((X(Wd / 2), X(y)), line, font=ft, fill=P["on_surface"] + (255,), anchor="mm")
+            y += 30
+        d.text((X(Wd / 2), X(y + 4)), fit_text(st.get("artist") or "", fa, X(Wd - 60)), font=fa,
+               fill=P["on_surface_variant"] + (255,), anchor="mm")
+        d.text((X(Wd / 2), X(Hd - 26)), "♫  " + T("playing"), font=fc,
+               fill=P["primary"] + (255,), anchor="mm")
+        out = img.convert("RGB")
+        copy_image_to_clipboard(out)
+        try:
+            pics = os.path.join(os.path.expanduser("~"), "Pictures", "SpotifyWidget")
+            os.makedirs(pics, exist_ok=True)
+            safe = "".join(c for c in st["title"] if c not in '<>:"/\\|?*')[:60].strip() or "song"
+            out.save(os.path.join(pics, f"{safe}.png"))
+        except Exception as e:  # noqa: BLE001
+            log("kart kaydedilemedi:", repr(e))
+        self.toast.show_message("", T("sh_card_ok"))  # resim simgesi
+
+    def _fill_devices(self, menu):
+        """Cihaza aktar alt menüsü açılırken cihazları getir."""
+        menu.delete(0, "end")
+        if not self.web.connected:
+            menu.add_command(label=T("s_need"), command=lambda: ConnectDialog(self))
+            return
+        try:
+            devs = self.web.devices()
+        except Exception as e:  # noqa: BLE001
+            log("cihazlar:", repr(e))
+            menu.add_command(label=T("dev_err"), state="disabled")
+            return
+        if not devs:
+            menu.add_command(label=T("dev_none"), state="disabled")
+        for dv in devs:
+            menu.add_command(label=("● " if dv["active"] else "   ") + f'{dv["name"]}  ({dv["type"]})',
+                             command=lambda i=dv["id"]: self._transfer(i))
+
+    def _transfer(self, device_id):
+        if not self.web.has_control:
+            ConnectDialog(self, reauth=True)
+            return
+
+        def go():
+            try:
+                self.web.transfer(device_id)
+            except Exception as e:  # noqa: BLE001
+                log("cihaza aktarılamadı:", repr(e))
+
+        threading.Thread(target=go, daemon=True).start()
 
     STAT_PERIODS = ("7", "30", "365", "all")
 
@@ -2291,22 +2848,28 @@ class App:
                 acc[3][a] = acc[3].get(a, 0.0) + v
             for t, v in d.get("tracks", {}).items():
                 acc[4][t] = acc[4].get(t, 0.0) + v
+            hours = d.get("hours")
+            if hours:
+                row = date.fromisoformat(k).weekday() * 24
+                g = acc[5]
+                for h, v in hours.items():
+                    g[row + int(h)] += v
 
         # içe aktarılan (değişmeyen) kısım önbellekte; canlı günler her seferinde eklenir
         live = [k for k in self.stats["days"] if s0 <= k <= s1]
         bk = (period, today, self.import_ver, tuple(sorted(live)))
         if getattr(self, "_imp_cache", (None,))[0] != bk:
-            acc = [0.0, 0, dict.fromkeys(bkeys, 0.0), {}, {}]
+            acc = [0.0, 0, dict.fromkeys(bkeys, 0.0), {}, {}, [0.0] * 168]
             skip = set(live)
             for k, d in self.imported.items():
                 if s0 <= k <= s1 and k not in skip:
                     add(acc, d, k)
             self._imp_cache = (bk, acc)
         base = self._imp_cache[1]
-        acc = [base[0], base[1], dict(base[2]), dict(base[3]), dict(base[4])]
+        acc = [base[0], base[1], dict(base[2]), dict(base[3]), dict(base[4]), list(base[5])]
         for k in live:
             add(acc, self._stat_get(k), k)
-        total, plays, bvals, artists, tracks = acc
+        total, plays, bvals, artists, tracks, grid = acc
         td = self._stat_get(s1) or {}
         if period == "7":
             tiles = [(fmt_dur(td.get("sec", 0.0)), T("st_today")),
@@ -2316,6 +2879,9 @@ class App:
             tiles = [(fmt_dur(total), T("st_total")),
                      (f"{int(plays):,}".replace(",", "."), T("st_plays")),
                      (fmt_dur(total / ndays), T("st_avg"))]
+            if period == "all":  # tüm zamanlar: günlük ortalama yerine dinleme serisi
+                cur_s, best_s = self._streaks()
+                tiles[2] = (T("st_streak_v", n=cur_s), T("st_streak", n=best_s))
         top_a = sorted(artists.items(), key=lambda kv: -kv[1])[:3]
         top_t = [(t.split("\t")[0], t.split("\t")[1] if "\t" in t else "", v)
                  for t, v in sorted(tracks.items(), key=lambda kv: -kv[1])[:3]]
@@ -2326,6 +2892,7 @@ class App:
         elif period.startswith("m"):
             title, up = f"{months[int(period[6:8]) - 1]} {period[1:5]}", "y" + period[1:5]
         res = {"tiles": tiles, "top_a": top_a, "top_t": top_t, "title": title, "up": up,
+               "grid": grid,
                "bars": [(labels[i], bvals[k], targets[i] if targets else None, k in cur)
                         for i, k in enumerate(bkeys)]}
         self._sum_cache = (ck, res)
@@ -2365,6 +2932,7 @@ class App:
                 return
             self.imported = load_imported_history()
             self.import_ver += 1
+            self._index_imported()
             self.cfg["list_tab"], self.cfg["stats_period"] = "stats", "all"
             self.cfg["queue_collapsed"] = False
             self.cfg.save()
@@ -2390,6 +2958,8 @@ class App:
                int(time.time() // 60) if self.cfg["list_tab"] != "queue" else 0,
                self.cfg["accent"], self.cfg["bg"], self.glass_ver,
                self.cfg["stats_period"], self.cfg["stats_list"], self.import_ver,
+               (self.lyrics.version, self._lyric_index())
+               if self.cfg["list_tab"] == "lyrics" and not self.mini else None,
                self._win_pos() if self.cfg["bg"] == "glass" else None)
         full = False
         if key != self.base_key:
@@ -2453,6 +3023,118 @@ class App:
             move_window(self.hwnd, x, ny)
             self.cfg["x"], self.cfg["y"] = x, ny
             self.cfg.save()
+
+    def _hotkey_osd(self, act):
+        """Kısayolla yapılan işlemi ekranda kısaca göster (widget görünmüyorsa: tam ekran
+        uygulama ya da önde başka bir pencere varken)."""
+        if not self.cfg["osd"] or self.inside:
+            return
+        fs = fullscreen_app((self.hwnd, self.toast.hwnd))
+        if fs is None and self.cfg["mode"] == "desktop":
+            fg = user32.GetForegroundWindow()
+            cls = ctypes.create_unicode_buffer(64)
+            user32.GetClassNameW(fg, cls, 64)
+            if not fg or cls.value in _SHELL_CLASSES:  # masaüstü önde: widget zaten görünüyor
+                return
+        elif fs is None:
+            return  # her zaman üstte: widget zaten görünüyor
+        if act in ("vol+", "vol-"):
+            v = self.vol_val if self.vol_val is not None else self.volume.get()
+            if v is not None:
+                self.toast.show_message(IC_MUTE if v <= 0 else IC_VOL, T("osd_vol"), fs,
+                                        value=v, hold=1000)
+        elif act == "play":
+            playing = not self.st.get("playing")  # komut henüz işlenmedi: tersi olacak
+            title = self.st.get("title") or ""
+            self.toast.show_message(IC_PAUSE if playing else IC_PLAY,
+                                    (T("osd_play") if playing else T("osd_pause"))
+                                    + (f" · {title}" if title else ""), fs)
+        elif act in ("next", "prev") and not self.cfg["notify"]:
+            # bildirim açıksa yeni şarkı zaten gösterilecek
+            self.toast.show_message(IC_NEXT if act == "next" else IC_PREV,
+                                    T("hk_next" if act == "next" else "hk_prev"), fs, hold=900)
+
+    # ---------------- ses: müziğe tepki, Discord'da kısma
+    def _audio_tick(self, now, st, playing):
+        # müziğe tepki veren dalga: Spotify'ın çıkış seviyesi (otomatik kazançla 0..1)
+        if self.cfg["react"] and self.cfg["wave"] and playing and not self.mini:
+            p = self.volume.peak(("spotify.exe",))
+            self._lvl_max = max(p, self._lvl_max * 0.995, 0.05)
+            target = min(1.0, (p / self._lvl_max) ** 0.8)
+            k = 0.6 if target > self.level else 0.25  # hızlı yüksel, yavaş düş
+            self.level += (target - self.level) * k
+        else:
+            self.level *= 0.8
+
+        # Discord'da biri konuşunca Spotify'ı kıs, susunca geri aç
+        if not self.cfg["duck"] or self.sleep_fade is not None or self._alarm_fade:
+            if self._duck:
+                self._duck_restore()
+            return
+        if self._duck_fade:  # geri açılış (yumuşak)
+            f = self._duck_fade
+            t = min(1.0, (now - f["t0"]) / 0.8)
+            self.volume.set(f["from"] + (f["to"] - f["from"]) * t)
+            if t >= 1.0:
+                self._duck_fade = None
+        talking = self.volume.peak(tuple(self.cfg["duck_apps"])) > 0.015
+        if talking:
+            if self._duck is None and st.get("ok"):
+                v = self.volume.get()
+                if v is not None and v > 0.02:
+                    self._duck_fade = None
+                    self._duck = {"orig": v, "low": v * 0.3, "last": now}
+                    self.volume.set(v * 0.3)
+            elif self._duck:
+                self._duck["last"] = now
+        elif self._duck and now - self._duck["last"] > 1.2:
+            self._duck_restore()
+
+    def _duck_restore(self):
+        d, self._duck = self._duck, None
+        cur = self.volume.get()
+        # kullanıcı bu arada sesi değiştirdiyse ona dokunma
+        if cur is not None and abs(cur - d["low"]) < 0.03:
+            self._duck_fade = {"from": cur, "to": d["orig"], "t0": time.monotonic()}
+
+    # ---------------- alarm
+    def _alarm_tick(self, st):
+        al = self.cfg["alarm"]
+        now = time.localtime()
+        if al.get("on") and time.strftime("%H:%M", now) == al.get("time") \
+                and self._alarm_day != now.tm_yday:
+            self._alarm_day = now.tm_yday
+            log("alarm:", al.get("time"))
+            if not st.get("ok"):
+                try:
+                    os.startfile("spotify:")
+                except OSError:
+                    pass
+            self._alarm_fade = {"t0": None, "target": None, "deadline": time.monotonic() + 90}
+            self.toast.show_message(IC_ALARM, T("al_fired"), fullscreen_app(
+                (self.hwnd, self.toast.hwnd)))
+        f = self._alarm_fade
+        if not f:
+            return
+        mono = time.monotonic()
+        if f["t0"] is None:  # Spotify'ın açılmasını bekle, sonra sesi kısıp çal
+            if mono > f["deadline"]:
+                self._alarm_fade = None
+                return
+            if st.get("ok"):
+                v = self.volume.get()
+                if v is None:
+                    return
+                f["target"] = v if v > 0.1 else 0.6
+                self.volume.set(0.02)
+                if not st.get("playing"):
+                    self.media.command("play")
+                f["t0"] = mono
+            return
+        t = min(1.0, (mono - f["t0"]) / 60.0)  # 1 dakikada sesi aç
+        self.volume.set(0.02 + (f["target"] - 0.02) * t)
+        if t >= 1.0:
+            self._alarm_fade = None
 
     def _vol_shown(self):
         if self.vol_val is not None and time.monotonic() < self.vol_until:
@@ -2778,11 +3460,10 @@ class App:
 
         # gösterilecek satırlar: (ad, alt yazı, küçük kapak, sağdaki metin)
         items, message, need_connect = None, None, False
-        if tab == "stats":
+        if tab in ("stats", "lyrics"):
             pass
         elif tab == "recent":
-            items = [(h["title"], h["artist"], self._hist_thumb(h), time_ago(h.get("t", 0)))
-                     for h in self._recent_items(rows)]
+            items = [(r["title"], r["sub"], r["thumb"], r["right"]) for r in self._recent_rows(rows)]
             if not items:
                 message = T("recent_empty")
         elif not connected:
@@ -2798,6 +3479,8 @@ class App:
             body = 0
         elif tab == "stats":
             body = STATS_H
+        elif tab == "lyrics":
+            body = max(rows, 3) * Q_ROW + Q_PAD
         elif need_connect:
             body = 86
         elif items:
@@ -2811,8 +3494,8 @@ class App:
         hy = y0 + Q_HEAD / 2
         x = 12
         for key, lbl in (("queue", T("tab_queue")), ("recent", T("tab_recent")),
-                         ("stats", T("tab_stats"))):
-            w = F["btn"].getlength(lbl) / S + 22
+                         ("lyrics", T("tab_lyrics")), ("stats", T("tab_stats"))):
+            w = F["btn"].getlength(lbl) / S + 20
             hid = "tab_" + key
             if tab == key:
                 rr(img, X(x), X(hy - 16), X(x + w), X(hy + 16), X(16), P["secondary_container"])
@@ -2838,6 +3521,9 @@ class App:
             return
         if tab == "stats":
             self._render_stats(img, d, top, hits)
+            return
+        if tab == "lyrics":
+            self._render_lyrics(img, d, top, body, hits)
             return
         if need_connect:
             d.text((X(22), X(top + 4)), T("connect_line1"), font=F["body"],
@@ -2867,7 +3553,11 @@ class App:
                    alpha=22)
             # küçük kapak
             tx0, ty0 = 20, ry + (Q_ROW - 40) / 2
-            if th is not None:
+            if th == "cal":  # geçen yıl bugün
+                rr(img, X(tx0), X(ty0), X(tx0 + 40), X(ty0 + 40), X(10), P["primary_container"])
+                d.text((X(tx0 + 20), X(ty0 + 20)), IC_CAL, font=self.icon_font(16),
+                       fill=P["on_primary_container"] + (255,), anchor="mm")
+            elif th is not None:
                 img.alpha_composite(th, (round(X(tx0)), round(X(ty0))))
             else:
                 rr(img, X(tx0), X(ty0), X(tx0 + 40), X(ty0 + 40), X(10), P["surface_highest"])
@@ -2926,11 +3616,23 @@ class App:
                    anchor="mm")
             hits.append(("sup", x, cy - 14, x + w, cy + 14))
 
-        # özet kutuları
+        # özet kutuları (bir yıl açıkken üçüncü kutu yıllık özet kartını açar)
         gap, x0, ty = 8, 16, top + 34
         tw = (W - 32 - 2 * gap) / 3
         for i, (val, lbl) in enumerate(sm["tiles"]):
             tx = x0 + i * (tw + gap)
+            if i == 2 and period.startswith("y"):
+                col = P["primary_container"]
+                if hov == "swrap":
+                    col = mix(col, P["on_primary_container"], 0.12)
+                rr(img, X(tx), X(ty), X(tx + tw), X(ty + 52), X(16), col)
+                d.text((X(tx + 12), X(ty + 19)), T("wrap_btn"), font=F["qhead"],
+                       fill=P["on_primary_container"] + (255,), anchor="lm")
+                d.text((X(tx + 12), X(ty + 37)), fit_text(T("wr_title", y=period[1:]),
+                                                          F["qsub"], X(tw - 20)),
+                       font=F["qsub"], fill=P["on_primary_container"] + (255,), anchor="lm")
+                hits.append(("swrap", tx, ty, tx + tw, ty + 52))
+                continue
             tile(tx, ty, tx + tw, ty + 52, 16)
             d.text((X(tx + 12), X(ty + 19)), fit_text(val, F["qhead"], X(tw - 20)),
                    font=F["qhead"], fill=(P["primary"] if i == 0 else P["on_surface"]) + (255,),
@@ -2966,12 +3668,12 @@ class App:
             if target is not None:
                 hits.append((hid, cx - cw / 2, by0 - 6, cx + cw / 2, by1 + 22))
 
-        # en çok dinlenenler: sanatçı / şarkı
+        # en çok dinlenenler: sanatçı / şarkı / saatler
         hy = top + 182
-        d.text((X(20), X(hy)), T("st_top_a" if lst == "artists" else "st_top_t"),
-               font=F["status"], fill=P["primary"] + (255,), anchor="lm")
+        d.text((X(20), X(hy)), T({"artists": "st_top_a", "tracks": "st_top_t"}.get(
+            lst, "st_hours")), font=F["status"], fill=P["primary"] + (255,), anchor="lm")
         x = W - 16
-        for key in ("tracks", "artists"):
+        for key in ("hours", "tracks", "artists"):
             lbl = T("sl_" + key)
             w = F["qsub"].getlength(lbl) / S + 16
             x -= w
@@ -2987,6 +3689,9 @@ class App:
             d.text((X(x + w / 2), X(hy)), lbl, font=F["qsub"], fill=col + (255,), anchor="mm")
             hits.append((hid, x, hy - 12, x + w, hy + 12))
             x -= 4
+        if lst == "hours":
+            self._render_heatmap(img, d, hy + 14, sm["grid"])
+            return
         rows = sm["top_a"] if lst == "artists" else [(t, v) for t, _a, v in sm["top_t"]]
         if not rows:
             d.text((X(20), X(hy + 30)), T("st_empty"), font=F["body"],
@@ -3004,13 +3709,13 @@ class App:
             t1 = fit_text(name, F["qtitle"], avail)
             d.text((X(20), X(ry)), t1, font=F["qtitle"], fill=P["on_surface"] + (255,),
                    anchor="lm")
-            if lst == "tracks":
-                rest = avail - F["qtitle"].getlength(t1)
-                artist = sm["top_t"][i][1]
-                if artist and rest > X(40):
-                    d.text((X(20) + avail - rest, X(ry + 1)),
-                           fit_text(" · " + artist, F["qsub"], rest), font=F["qsub"],
-                           fill=P["on_surface_variant"] + (255,), anchor="lm")
+            # şarkılarda sanatçı, sanatçılarda ilk dinleme tarihi
+            extra = sm["top_t"][i][1] if lst == "tracks" else self._since(name)
+            rest = avail - F["qtitle"].getlength(t1)
+            if extra and rest > X(40):
+                d.text((X(20) + avail - rest, X(ry + 1)),
+                       fit_text(" · " + extra, F["qsub"], rest), font=F["qsub"],
+                       fill=P["on_surface_variant"] + (255,), anchor="lm")
             d.text((X(W - 20), X(ry)), dur, font=F["qsub"],
                    fill=P["on_surface_variant"] + (255,), anchor="rm")
             rr(img, X(20), X(ry + 13), X(W - 20), X(ry + 16), X(1.5), P["on_surface"],
@@ -3018,6 +3723,94 @@ class App:
             rr(img, X(20), X(ry + 13), X(20 + (W - 40) * sec / best), X(ry + 16), X(1.5),
                P["primary"], alpha=200)
             hits.append((hid, 10, ry - 11, W - 10, ry + 19))
+
+    def _lyric_index(self):
+        """Şu an söylenen satırın indeksi (senkronize değilse -1)."""
+        if not self.lyrics.synced:
+            return -1
+        pos = self._position()[0] + 0.25
+        idx = -1
+        for i, (t, _txt) in enumerate(self.lyrics.lines()):
+            if t is not None and t <= pos:
+                idx = i
+            else:
+                break
+        return idx
+
+    def _render_lyrics(self, img, d, top, body, hits):
+        S, P, F = self.S, self.pal, self.F
+        X = lambda v: v * S  # noqa: E731
+        st = self._view()
+        if not st.get("ok") and not st.get("offline"):
+            msg = T("waiting_title")
+        else:
+            msg = {"loading": T("ly_loading"), "none": T("ly_none"), "instr": T("ly_instr"),
+                   "err": T("ly_err")}.get(self.lyrics.state)
+        lines = self.lyrics.lines()
+        if msg or not lines:
+            d.text((X(W / 2), X(top + body / 2 - 6)), msg or T("ly_none"), font=F["body"],
+                   fill=P["on_surface_variant"] + (255,), anchor="mm")
+            return
+        lh = 27
+        n = max(3, int((body - 8) // lh))
+        cur = self._lyric_index()
+        if self.lyrics.synced:
+            first = max(0, min(cur - 1, len(lines) - n)) if cur >= 0 else 0
+        else:
+            first = 0
+        maxw = X(W - 44)
+        for row in range(n):
+            i = first + row
+            if i >= len(lines):
+                break
+            t, text = lines[i]
+            y = top + 4 + row * lh + lh / 2
+            hid = f"ly{i}"
+            if t is not None and self.hover == hid:
+                rr(img, X(10), X(y - lh / 2 + 1), X(W - 10), X(y + lh / 2 - 1), X(10),
+                   P["on_surface"], alpha=18)
+            if i == cur:
+                font, col = F["lyric"], P["primary"]
+            elif i < cur:
+                font, col = F["qtitle"], P["outline"]
+            else:
+                font, col = F["qtitle"], (P["on_surface"] if not self.lyrics.synced
+                                          else P["on_surface_variant"])
+            d.text((X(22), X(y)), fit_text(text or "♪", font, maxw), font=font,
+                   fill=col + (255,), anchor="lm")
+            if t is not None:
+                hits.append((hid, 10, y - lh / 2, W - 10, y + lh / 2))
+        if not self.lyrics.synced:
+            d.text((X(W - 22), X(top + body - 10)), T("ly_plain"), font=F["tiny"],
+                   fill=P["outline"] + (255,), anchor="rm")
+
+    def _render_heatmap(self, img, d, y0, grid):
+        """Haftanın günü × saat ısı haritası (7 satır, 24 sütun)."""
+        S, P, F = self.S, self.pal, self.F
+        X = lambda v: v * S  # noqa: E731
+        names = T("days").split()
+        mx = max(grid) or 1.0
+        gx0, gx1 = 42, W - 18
+        cw, ch = (gx1 - gx0) / 24, 8.6
+        for r in range(7):
+            ry = y0 + r * ch
+            if r in (0, 2, 4, 6):
+                d.text((X(20), X(ry + ch / 2)), names[r], font=F["tiny"],
+                       fill=P["on_surface_variant"] + (255,), anchor="lm")
+            for c in range(24):
+                v = grid[r * 24 + c]
+                cx = gx0 + c * cw
+                if v <= 0:
+                    rr(img, X(cx + 0.8), X(ry + 0.8), X(cx + cw - 0.8), X(ry + ch - 0.8), X(2),
+                       P["on_surface"], alpha=12)
+                else:
+                    a = 40 + round(215 * (v / mx) ** 0.65)
+                    rr(img, X(cx + 0.8), X(ry + 0.8), X(cx + cw - 0.8), X(ry + ch - 0.8), X(2),
+                       P["primary"], alpha=a)
+        ly = y0 + 7 * ch + 8
+        for hr in (0, 6, 12, 18, 23):
+            d.text((X(gx0 + (hr + 0.5) * cw), X(ly)), f"{hr:02d}", font=F["tiny"],
+                   fill=P["on_surface_variant"] + (255,), anchor="mm")
 
     def _queue_thumb(self, url):
         if not url:
@@ -3214,7 +4007,7 @@ class App:
         elif a == "qcollapse":
             self.cfg["queue_collapsed"] = not self.cfg["queue_collapsed"]
             self.cfg.save()
-        elif a in ("tab_queue", "tab_recent", "tab_stats"):
+        elif a in ("tab_queue", "tab_recent", "tab_stats", "tab_lyrics"):
             self.cfg["list_tab"] = a[4:]
             self.cfg["queue_collapsed"] = False
             self.cfg.save()
@@ -3222,6 +4015,8 @@ class App:
             ConnectDialog(self)
         elif a.startswith("sp_"):
             self._set("stats_period", a[3:])
+        elif a == "swrap":
+            RecapWindow(self, int(self.cfg["stats_period"][1:]))
         elif a == "sup":  # açılmış aydan yıla, yıldan tümüne
             up = self._stats_summary()["up"]
             if up:
@@ -3245,14 +4040,16 @@ class App:
                 except OSError:
                     webbrowser.open("https://open.spotify.com/search/" + urllib.parse.quote(q))
         elif a.startswith("h"):  # son çalınan: Spotify'da ara
-            items = self._recent_items(int(self.cfg["queue_rows"]))
+            items = self._recent_rows(int(self.cfg["queue_rows"]))
             i = int(a[1:])
             if i < len(items):
-                q = f'{items[i]["title"]} {items[i]["artist"]}'.strip()
-                try:
-                    os.startfile("spotify:search:" + urllib.parse.quote(q))
-                except OSError:
-                    webbrowser.open("https://open.spotify.com/search/" + urllib.parse.quote(q))
+                self._spotify_search(items[i]["q"].strip())
+        elif a.startswith("ly"):  # söz satırı: o ana atla
+            i = int(a[2:])
+            lines = self.lyrics.lines()
+            if lines and i < len(lines) and lines[i][0] is not None:
+                self.seek_hold = (lines[i][0], time.monotonic())
+                self.media.command("seek", lines[i][0])
         elif a.startswith("q"):
             n = int(a[1:]) + 1
             self.media.command("skip_n", n)
@@ -3359,6 +4156,30 @@ class App:
         for *_x, keys, key in HOTKEYS:
             hk.add_command(label=f"{keys}   {T(key)}", state="disabled")
         m.add_cascade(label=T("m_hotkeys"), menu=hk)
+        self.v_react = tk.BooleanVar(value=c["react"])
+        m.add_checkbutton(label=T("m_react"), variable=self.v_react,
+                          command=lambda: self._set("react", self.v_react.get()))
+        self.v_duck = tk.BooleanVar(value=c["duck"])
+        m.add_checkbutton(label=T("m_duck"), variable=self.v_duck,
+                          command=lambda: self._set("duck", self.v_duck.get()))
+        self.v_osd = tk.BooleanVar(value=c["osd"])
+        m.add_checkbutton(label=T("m_osd"), variable=self.v_osd,
+                          command=lambda: self._set("osd", self.v_osd.get()))
+        al = sub()
+        self.v_alarm = tk.BooleanVar(value=bool(c["alarm"].get("on")))
+        al.add_checkbutton(label=T("al_on"), variable=self.v_alarm, command=self._toggle_alarm)
+        al.add_command(label=T("al_set", t=c["alarm"].get("time", "08:00")),
+                       command=lambda: AlarmDialog(self))
+        m.add_cascade(label=T("m_alarm"), menu=al)
+        m.add_separator()
+        m.add_command(label=T("m_search"), command=lambda: SearchDialog(self))
+        dev = tk.Menu(m, tearoff=0)
+        dev.configure(postcommand=lambda: self._fill_devices(dev))
+        m.add_cascade(label=T("m_devices"), menu=dev)
+        sh = sub()
+        sh.add_command(label=T("sh_link"), command=self._share_link)
+        sh.add_command(label=T("sh_card"), command=self._share_card)
+        m.add_cascade(label=T("m_share"), menu=sh)
         m.add_command(label=T("m_import"), command=self._import_data)
         self.v_lang = tk.StringVar(value=LANG)
         lg = sub()
@@ -3377,6 +4198,11 @@ class App:
                           command=self._set_startup)
         m.add_separator()
         m.add_command(label=T("m_close"), command=self.root.destroy)
+
+    def _toggle_alarm(self):
+        self.cfg["alarm"] = dict(self.cfg["alarm"], on=bool(self.v_alarm.get()))
+        self.cfg.save()
+        self._alarm_day = None
 
     def _set_hotkeys(self):
         self._set("hotkeys", self.v_hotkeys.get())
@@ -3438,6 +4264,8 @@ class App:
     def run(self):
         self.root.mainloop()
         self._save_stats()
+        if self._duck:  # kapanırken kısılmış sesi geri getir
+            self.volume.set(self._duck["orig"])
 
 
 # ------------------------------------------------------------------ bildirim baloncuğu
@@ -3463,6 +4291,7 @@ class Toast:
         self.surface.alpha = 0
         self.fs = False
         self._hold_until = 0.0
+        self.hold = self.HOLD_MS
         self.surface.full(Image.new("RGBA", (self.WM, self.HM), (0, 0, 0, 0)))
         t.bind("<Button-1>", lambda _e: self.hide())
         self._job = None
@@ -3497,20 +4326,50 @@ class Toast:
     def show(self, st, fs=None):
         """fs: tam ekran uygulamanın monitörü (varsa bildirim onun üstünde, sağ üstte çıkar
         ve tıklamaları oyuna geçirir)."""
+        self._present(self._render(st), self.TW, self.TH, fs, self.HOLD_MS)
+
+    def show_message(self, icon, text, fs=None, value=None, hold=1400):
+        """Kısa ekran göstergesi (kısayollar, alarm, kopyalandı): simge + metin
+        (+ value verilirse ses çubuğu)."""
+        app = self.app
+        S, P, F = app.S, app.pal_to, app.F
+        X = lambda v: v * S  # noqa: E731
+        w, h = 300, 60
+        img = Image.new("RGBA", (self.WM, self.HM), (0, 0, 0, 0))
+        d = Drawer(img)
+        rr(img, 0, 0, X(w), X(h), X(30), P["surface_highest"])
+        rr(img, X(1), X(1), X(w - 1), X(h - 1), X(29), P["surface_high"])
+        rr(img, X(10), X(10), X(50), X(50), 0, P["primary"], ellipse=True)
+        d.text((X(30), X(30)), icon, font=app.icon_font(17), fill=P["on_primary"] + (255,),
+               anchor="mm")
+        if value is None:
+            d.text((X(64), X(30)), fit_text(text, F["mtitle"], X(w - 80)), font=F["mtitle"],
+                   fill=P["on_surface"] + (255,), anchor="lm")
+        else:
+            d.text((X(64), X(22)), text, font=F["btn"], fill=P["on_surface"] + (255,),
+                   anchor="lm")
+            d.text((X(w - 20), X(22)), f"%{round(value * 100)}", font=F["btn"],
+                   fill=P["primary"] + (255,), anchor="rm")
+            rr(img, X(64), X(36), X(w - 20), X(41), X(2.5), P["on_surface"], alpha=30)
+            if value > 0:
+                rr(img, X(64), X(36), X(64 + (w - 84) * value), X(41), X(2.5), P["primary"])
+        self._present(img, w, h, fs, hold)
+
+    def _present(self, img, w, h, fs, hold):
         S = self.app.S
+        self.hold = hold
         self.fs = fs is not None
         ex = user32.GetWindowLongPtrW(self.hwnd, GWL_EXSTYLE)
         ex = (ex | WS_EX_TRANSPARENT) if self.fs else (ex & ~WS_EX_TRANSPARENT)
         user32.SetWindowLongPtrW(self.hwnd, GWL_EXSTYLE, ex)
-        self.surface.full(self._render(st))
+        self.surface.full(img)
         m = round(16 * S)
         if fs is not None:
-            self._pos = (fs.right - round(self.TW * S) - m, fs.top + m + round(8 * S))
+            self._pos = (fs.right - round(w * S) - m, fs.top + m + round(8 * S))
         else:
             rc = wintypes.RECT()
             user32.SystemParametersInfoW(0x30, 0, ctypes.byref(rc), 0)  # SPI_GETWORKAREA
-            self._pos = (rc.right - round(self.TW * S) - m,
-                         rc.bottom - round(self.TH * S) - m)
+            self._pos = (rc.right - round(w * S) - m, rc.bottom - round(h * S) - m)
         self._offset = 14 * S  # aşağıdan yukarı kayarak gelir
         user32.SetWindowPos(self.hwnd, HWND_TOPMOST, self._pos[0],
                             self._pos[1] + int(self._offset), 0, 0,
@@ -3544,7 +4403,7 @@ class Toast:
         if nxt != target:
             self._job = self.top.after(16, self._step)
         elif target > 0:  # bekle (en üstte kalarak), sonra kaybol
-            self._hold_until = time.monotonic() + self.HOLD_MS / 1000
+            self._hold_until = time.monotonic() + self.hold / 1000
             self._job = self.top.after(250, self._hold)
         else:  # gizlendi: ekran dışına al
             move_window(self.hwnd, -30000, -30000)
@@ -3655,6 +4514,294 @@ class ConnectDialog:
     def _close(self):
         ConnectDialog._open = None
         self.top.destroy()
+
+
+def copy_image_to_clipboard(img):
+    """PIL görüntüsünü Windows panosuna (CF_DIB) koyar."""
+    buf = io.BytesIO()
+    img.convert("RGB").save(buf, "BMP")
+    data = buf.getvalue()[14:]  # BITMAPFILEHEADER'sız DIB
+    k32 = ctypes.windll.kernel32
+    k32.GlobalAlloc.restype = ctypes.c_void_p
+    k32.GlobalLock.restype = ctypes.c_void_p
+    k32.GlobalLock.argtypes = [ctypes.c_void_p]
+    k32.GlobalUnlock.argtypes = [ctypes.c_void_p]
+    user32.SetClipboardData.argtypes = [ctypes.c_uint, ctypes.c_void_p]
+    h = k32.GlobalAlloc(0x0002, len(data))  # GMEM_MOVEABLE
+    p = k32.GlobalLock(h)
+    ctypes.memmove(p, data, len(data))
+    k32.GlobalUnlock(h)
+    if not user32.OpenClipboard(None):
+        return False
+    try:
+        user32.EmptyClipboard()
+        return bool(user32.SetClipboardData(8, h))  # CF_DIB
+    finally:
+        user32.CloseClipboard()
+
+
+class _Dialog:
+    """Materyal renklerinde basit tk penceresi tabanı (tek kopya)."""
+    _open = {}
+
+    def _setup(self, app, title):
+        old = _Dialog._open.get(type(self).__name__)
+        if old is not None:
+            try:
+                old.lift()
+                old.focus_force()
+                return False
+            except tk.TclError:
+                pass
+        self.app = app
+        light = app.light
+        self.bg = "#F7F5FA" if light else "#1C1B1F"
+        self.fg = "#1C1B1F" if light else "#E6E1E5"
+        self.dim = "#49454F" if light else "#CAC4D0"
+        self.acc = "#%02x%02x%02x" % app.pal["primary"]
+        self.on_acc = "#%02x%02x%02x" % app.pal["on_primary"]
+        self.field = "#E7E0EC" if light else "#2B2930"
+        t = self.top = tk.Toplevel(app.root)
+        _Dialog._open[type(self).__name__] = t
+        t.title(title)
+        t.configure(bg=self.bg, padx=22, pady=18)
+        t.resizable(False, False)
+        t.attributes("-topmost", True)
+        t.protocol("WM_DELETE_WINDOW", self.close)
+        t.bind("<Escape>", lambda _e: self.close())
+        return True
+
+    def btn(self, parent, text, cmd, primary=False, small=False):
+        bg, fg = (self.acc, self.on_acc) if primary else (self.field, self.fg)
+        return tk.Button(parent, text=text, bg=bg, fg=fg, activebackground=bg,
+                         activeforeground=fg, relief="flat", bd=0,
+                         padx=10 if small else 16, pady=3 if small else 7, cursor="hand2",
+                         command=cmd, font=("Segoe UI Semibold" if primary else "Segoe UI",
+                                            9 if small else 10))
+
+    def close(self):
+        _Dialog._open.pop(type(self).__name__, None)
+        try:
+            self.top.destroy()
+        except tk.TclError:
+            pass
+
+
+class SearchDialog(_Dialog):
+    def __init__(self, app):
+        if not self._setup(app, T("s_title")):
+            return
+        t, web = self.top, app.web
+        tk.Label(t, text=T("s_title"), bg=self.bg, fg=self.fg,
+                 font=("Segoe UI Semibold", 15)).pack(anchor="w")
+        tk.Label(t, text=T("s_hint"), bg=self.bg, fg=self.dim,
+                 font=("Segoe UI", 9)).pack(anchor="w", pady=(2, 8))
+        self.entry = tk.Entry(t, bg=self.field, fg=self.fg, insertbackground=self.fg,
+                              relief="flat", font=("Segoe UI", 12), width=42)
+        self.entry.pack(fill="x", ipady=7, ipadx=8)
+        self.entry.bind("<Return>", lambda _e: self._search())
+        self.results = tk.Frame(t, bg=self.bg)
+        self.results.pack(fill="x", pady=(10, 0))
+        self.status = tk.Label(t, text="", bg=self.bg, fg=self.dim, font=("Segoe UI", 9),
+                               wraplength=420, justify="left")
+        self.status.pack(anchor="w", pady=(8, 0))
+        self._imgs = []
+        if not web.connected:
+            self.status.config(text=T("s_need"))
+            self.btn(t, T("connect_btn"), lambda: (self.close(), ConnectDialog(app)),
+                     primary=True).pack(anchor="e", pady=(8, 0))
+        t.focus_force()
+        self.entry.focus_set()
+
+    def _search(self):
+        q = self.entry.get().strip()
+        if not q or not self.app.web.connected:
+            return
+        self.status.config(text=T("loading"))
+        res = {}
+
+        def work():
+            try:
+                items = self.app.web.search(q)
+                for it in items:
+                    self.app.web._thumb(it["img"])
+                res["items"] = items
+            except Exception as e:  # noqa: BLE001
+                res["err"] = e
+
+        th = threading.Thread(target=work, daemon=True)
+        th.start()
+
+        def wait():
+            if th.is_alive():
+                self.top.after(120, wait)
+                return
+            if "err" in res:
+                log("arama:", repr(res["err"]))
+                self.status.config(text=T("err_http", code=getattr(res["err"], "code", "?")))
+                return
+            self._show(res["items"])
+
+        wait()
+
+    def _show(self, items):
+        from PIL import ImageTk
+        for w in self.results.winfo_children():
+            w.destroy()
+        self._imgs.clear()
+        self.status.config(text="" if items else T("s_none"))
+        for it in items:
+            row = tk.Frame(self.results, bg=self.bg)
+            row.pack(fill="x", pady=3)
+            src = self.app.web.thumbs.get(it["img"])
+            if src is not None:
+                ph = ImageTk.PhotoImage(rounded_image(src, 40, 8))
+                self._imgs.append(ph)
+                tk.Label(row, image=ph, bg=self.bg).pack(side="left", padx=(0, 10))
+            txt = tk.Frame(row, bg=self.bg)
+            txt.pack(side="left", fill="x", expand=True)
+            tk.Label(txt, text=it["name"][:48], bg=self.bg, fg=self.fg, anchor="w",
+                     font=("Segoe UI Semibold", 10)).pack(anchor="w")
+            tk.Label(txt, text=f'{it["artist"][:40]}  ·  {fmt_time(it["dur"])}', bg=self.bg,
+                     fg=self.dim, anchor="w", font=("Segoe UI", 9)).pack(anchor="w")
+            self.btn(row, "＋ " + T("s_queue"), lambda u=it["uri"]: self._do("queue", u),
+                     small=True).pack(side="right", padx=(6, 0))
+            self.btn(row, "▶ " + T("s_play"), lambda u=it["uri"]: self._do("play", u),
+                     primary=True, small=True).pack(side="right")
+
+    def _do(self, what, uri):
+        web = self.app.web
+        if not web.has_control:
+            if what == "play":  # izin yoksa: Spotify uygulamasında aç
+                try:
+                    os.startfile(uri)
+                except OSError:
+                    pass
+            self.status.config(text=T("need_scope"))
+            if not getattr(self, "_reauth_btn", None):
+                self._reauth_btn = self.btn(
+                    self.top, T("connect_btn"),
+                    lambda: (self.close(), ConnectDialog(self.app, reauth=True)), primary=True)
+                self._reauth_btn.pack(anchor="e", pady=(8, 0))
+            return
+        res = {}
+
+        def work():
+            try:
+                (web.play_uri if what == "play" else web.queue_uri)(uri)
+            except urllib.error.HTTPError as e:
+                res["code"] = e.code
+            except Exception as e:  # noqa: BLE001
+                res["code"] = repr(e)
+
+        th = threading.Thread(target=work, daemon=True)
+        th.start()
+
+        def wait():
+            if th.is_alive():
+                self.top.after(120, wait)
+                return
+            code = res.get("code")
+            if code is None:
+                self.status.config(text=T("s_queued") if what == "queue" else "▶")
+            elif code in (403, 404):  # Premium yok ya da etkin cihaz yok
+                try:
+                    os.startfile(uri)
+                except OSError:
+                    pass
+                self.status.config(text=T("s_premium"))
+            else:
+                self.status.config(text=T("err_http", code=code))
+
+        wait()
+
+
+class AlarmDialog(_Dialog):
+    def __init__(self, app):
+        if not self._setup(app, T("al_title")):
+            return
+        t = self.top
+        al = app.cfg["alarm"]
+        hh, mm = (al.get("time") or "08:00").split(":")
+        tk.Label(t, text=T("al_title"), bg=self.bg, fg=self.fg,
+                 font=("Segoe UI Semibold", 15)).pack(anchor="w")
+        tk.Label(t, text=T("al_text"), bg=self.bg, fg=self.dim, justify="left",
+                 font=("Segoe UI", 9)).pack(anchor="w", pady=(4, 12))
+        row = tk.Frame(t, bg=self.bg)
+        row.pack(anchor="w")
+        self.h = tk.Spinbox(row, from_=0, to=23, width=3, format="%02.0f", wrap=True,
+                            font=("Segoe UI Semibold", 22), justify="center", relief="flat",
+                            bg=self.field, fg=self.fg, buttonbackground=self.field,
+                            insertbackground=self.fg)
+        self.m = tk.Spinbox(row, from_=0, to=59, width=3, format="%02.0f", wrap=True,
+                            font=("Segoe UI Semibold", 22), justify="center", relief="flat",
+                            bg=self.field, fg=self.fg, buttonbackground=self.field,
+                            insertbackground=self.fg)
+        self.h.delete(0, "end")
+        self.h.insert(0, hh)
+        self.m.delete(0, "end")
+        self.m.insert(0, mm)
+        self.h.pack(side="left")
+        tk.Label(row, text=":", bg=self.bg, fg=self.fg,
+                 font=("Segoe UI Semibold", 22)).pack(side="left", padx=4)
+        self.m.pack(side="left")
+        self.on = tk.BooleanVar(value=True)
+        tk.Checkbutton(t, text=T("al_on"), variable=self.on, bg=self.bg, fg=self.fg,
+                       selectcolor=self.field, activebackground=self.bg,
+                       activeforeground=self.fg, font=("Segoe UI", 10)).pack(anchor="w",
+                                                                           pady=(12, 0))
+        bottom = tk.Frame(t, bg=self.bg)
+        bottom.pack(fill="x", pady=(14, 0))
+        self.btn(bottom, T("al_save"), self._save, primary=True).pack(side="right")
+        self.btn(bottom, T("dlg_close"), self.close).pack(side="right", padx=8)
+        t.focus_force()
+
+    def _save(self):
+        try:
+            h = max(0, min(23, int(self.h.get())))
+            m = max(0, min(59, int(self.m.get())))
+        except ValueError:
+            return
+        self.app.cfg["alarm"] = {"on": bool(self.on.get()), "time": f"{h:02d}:{m:02d}"}
+        self.app.cfg.save()
+        self.app._alarm_day = None
+        self.app.menu.destroy()
+        self.app._build_menu()
+        self.close()
+
+
+class RecapWindow(_Dialog):
+    def __init__(self, app, year):
+        if not self._setup(app, T("wr_title", y=year)):
+            return
+        from PIL import ImageTk
+        self.img = app._render_recap(year)
+        disp = self.img
+        if disp.height > 720:  # ekrana sığsın
+            sc = 720 / disp.height
+            disp = disp.resize((round(disp.width * sc), 720), Image.Resampling.LANCZOS)
+        self.ph = ImageTk.PhotoImage(disp)
+        tk.Label(self.top, image=self.ph, bg=self.bg).pack()
+        bottom = tk.Frame(self.top, bg=self.bg)
+        bottom.pack(fill="x", pady=(12, 0))
+        self.status = tk.Label(bottom, text="", bg=self.bg, fg=self.dim, font=("Segoe UI", 9))
+        self.status.pack(side="left")
+        self.btn(bottom, T("wr_copy"), self._copy, primary=True).pack(side="right")
+        self.btn(bottom, T("wr_save"), lambda: self._save(year)).pack(side="right", padx=8)
+        self.top.focus_force()
+
+    def _copy(self):
+        if copy_image_to_clipboard(self.img):
+            self.status.config(text=T("wr_copied"))
+
+    def _save(self, year):
+        from tkinter import filedialog
+        p = filedialog.asksaveasfilename(parent=self.top, defaultextension=".png",
+                                         initialfile=f"spotify-{year}.png",
+                                         filetypes=[("PNG", "*.png")])
+        if p:
+            self.img.save(p)
+            self.status.config(text="✓ " + os.path.basename(p))
 
 
 if __name__ == "__main__":
