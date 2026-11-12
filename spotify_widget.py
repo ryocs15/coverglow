@@ -4959,10 +4959,14 @@ class MenuPanel:
             y = ay - round(M * S) + 2
             if x + w > wa.right:
                 x = ax - w + round(M * S) - 2
-            if y + h > wa.bottom:  # aşağı sığmıyorsa yukarı aç
+            self.up = y + h > wa.bottom  # aşağı sığmıyorsa yukarı aç
+            if self.up:
                 y = ay - h + round(M * S) - 2
             self.pos = [x, y]
+            self.bottom = y + h
         x, y = self.pos
+        if self.up:  # yukarı açıldıysa alt kenar sabit: kısa sayfalar imlecin yanında kalır
+            y = self.bottom - h
         x = max(wa.left - round(M * S), min(x, wa.right - w + round(M * S)))
         y = max(wa.top - round(M * S), min(y, wa.bottom - h + round(M * S)))
         self.pos = [x, y]
