@@ -834,7 +834,7 @@ class AppVolume:
 
     def _meters(self):
         t, ms = self._all
-        if time.monotonic() - t < 3:
+        if time.monotonic() - t < 8:  # oturum listesi pahalı (her süreç adı okunur)
             return ms
         ms = []
         try:
@@ -2510,7 +2510,13 @@ class App:
             animating = True
         # animasyon varken ~60 fps: bu karenin süresini düşerek sabit aralık tut
         frame_ms = FRAME_MS if self.cfg["fps"] >= 60 else 33
-        interval = frame_ms if (animating or self.drag_seek is not None) else 200
+        if animating or self.drag_seek is not None:
+            interval = frame_ms
+        elif playing or self.inside or self._alarm_fade or self._duck or self._duck_fade \
+                or self.sleep_end is not None:
+            interval = 200   # süre / ilerleme güncel kalsın
+        else:
+            interval = 450   # duraklatılmış ve boşta: daha seyrek kontrol yeter
         work = (time.monotonic() - now) * 1000
         self.root.after(max(1, int(interval - work)), self._tick)
 
@@ -3339,6 +3345,9 @@ class App:
             self._lvl_lo = None
 
         # Discord'da biri konuşunca Spotify'ı kıs, susunca geri aç
+        # (Spotify çalmıyorsa kısacak bir şey yok: ses oturumlarını hiç tarama)
+        if not playing and not self._duck and not self._duck_fade:
+            return
         if not self.cfg["duck"] or self.sleep_fade is not None or self._alarm_fade:
             if self._duck:
                 self._duck_restore()
@@ -5691,6 +5700,10 @@ class HistoryDialog(_Dialog):
             return
         kind, key, _e = self._rows[sel[0]]
         self.app._spotify_search(key if kind == "artist" else key.replace("\t", " "))
+
+    def close(self):
+        self.app._hidx = (None,)  # arama dizinini bellekten bırak (gerekirse yeniden kurulur)
+        super().close()
 
 
 if __name__ == "__main__":
