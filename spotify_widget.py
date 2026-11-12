@@ -168,6 +168,15 @@ STRINGS = {
                                          "(Bilgisayar açık ve widget çalışıyor olmalı.)",
         "al_save": "Kaydet", "al_fired": "Günaydın! Alarm çalıyor",
         "need_scope": "Bu özellik için hesabı bir kez yeniden bağla (yeni izin gerekiyor).",
+        # yeni menü
+        "mn_appearance": "Görünüm", "mn_transparency": "Şeffaflık", "mn_widget": "Widget",
+        "mn_notif": "Bildirim ve kısayollar", "mn_account": "Spotify hesabı",
+        "mn_language": "Dil", "mn_share": "Şarkıyı paylaş", "acc_on": "Bağlı",
+        "acc_off": "Bağlı değil", "q_search": "Ara", "q_mini": "Mini", "q_lock": "Kilitle",
+        "q_share": "Paylaş", "q_open": "Spotify", "off": "Kapalı", "on": "Açık",
+        "sleep_left": "{m} dk kaldı", "seg_desktop": "Masaüstü", "seg_top": "Her zaman üstte",
+        "m_rows_s": "Listedeki satır", "m_idle_s": "Fare uzaktayken", "m_reconnect": "Yeniden bağla",
+        "hk_list": "KISAYOLLAR",
         "m_accent": "Renk", "ac_auto": "Albüm kapağından", "ac_green": "Yeşil",
         "ac_blue": "Mavi", "ac_purple": "Mor", "ac_pink": "Pembe", "ac_red": "Kırmızı",
         "ac_orange": "Turuncu", "ac_teal": "Turkuaz", "ac_mono": "Gri",
@@ -275,6 +284,14 @@ STRINGS = {
                                          "(The PC must be on and the widget running.)",
         "al_save": "Save", "al_fired": "Good morning! Alarm playing",
         "need_scope": "Reconnect your account once to use this (needs a new permission).",
+        "mn_appearance": "Appearance", "mn_transparency": "Transparency", "mn_widget": "Widget",
+        "mn_notif": "Notifications & shortcuts", "mn_account": "Spotify account",
+        "mn_language": "Language", "mn_share": "Share song", "acc_on": "Connected",
+        "acc_off": "Not connected", "q_search": "Search", "q_mini": "Mini", "q_lock": "Lock",
+        "q_share": "Share", "q_open": "Spotify", "off": "Off", "on": "On",
+        "sleep_left": "{m} min left", "seg_desktop": "Desktop", "seg_top": "Always on top",
+        "m_rows_s": "Rows in list", "m_idle_s": "When mouse is away", "m_reconnect": "Reconnect",
+        "hk_list": "SHORTCUTS",
         "m_accent": "Color", "ac_auto": "From album art", "ac_green": "Green",
         "ac_blue": "Blue", "ac_purple": "Purple", "ac_pink": "Pink", "ac_red": "Red",
         "ac_orange": "Orange", "ac_teal": "Teal", "ac_mono": "Gray",
@@ -1779,6 +1796,7 @@ class App:
         # uyku zamanlayıcısı
         self.sleep_end = None
         self.sleep_fade = None
+        self.sleep_choice = 0
 
         # pencere en büyük boyuta göre açılır; içerik seçilen ölçekte sol üste çizilir,
         # kalan şeffaf alan tıklamaları masaüstüne geçirir
@@ -1862,7 +1880,6 @@ class App:
         r.bind("<Leave>", self._on_leave)
         r.bind("<MouseWheel>", self._on_wheel)
         r.bind("<Double-Button-1>", self._on_double)
-        self._build_menu()
         self.toast = Toast(self)
         self.root.after(30, self._tick)
         self.root.after(1500, self._keep_z)
@@ -1941,8 +1958,6 @@ class App:
         global LANG
         LANG = code
         self._set("lang", code)
-        self.menu.destroy()
-        self._build_menu()
         self._render_all()
 
     # ---------------- boyut
@@ -1989,7 +2004,6 @@ class App:
             return
         self.cfg["scale"] = sc
         self.cfg.save()
-        self.v_scale.set(sc)
         self._apply_scale()
         self._render_all()
 
@@ -2136,7 +2150,7 @@ class App:
     def _set_sleep(self, minutes):
         self._restore_sleep_volume()
         self.sleep_end = time.monotonic() + minutes * 60 if minutes else None
-        self.v_sleep.set(minutes)
+        self.sleep_choice = minutes
         self.base_key = None
 
     def _restore_sleep_volume(self):
@@ -2147,7 +2161,7 @@ class App:
     def _finish_sleep(self):
         fade = self.sleep_fade
         self.sleep_end = self.sleep_fade = None
-        self.v_sleep.set(0)
+        self.sleep_choice = 0
         if self.st.get("ok") and self.st.get("playing"):
             self.media.command("pause")
         if fade is not None:  # duraklattıktan sonra eski ses düzeyine dön
@@ -2164,7 +2178,6 @@ class App:
         self.mini = not self.mini
         self.cfg["mini"] = self.mini
         self.cfg.save()
-        self.v_mini.set(self.mini)
         self.hover = None
         self._apply_scale()
         self._render_all()
@@ -4055,197 +4068,56 @@ class App:
             self.media.command("skip_n", n)
             self.web.refresh_now()
 
-    # ---------------- menü
-    def _build_menu(self):
-        c = self.cfg
-        self.v_mode = tk.StringVar(value=c["mode"])
-        self.v_theme = tk.StringVar(value=c["theme"])
-        self.v_opacity = tk.IntVar(value=c["opacity"])
-        self.v_locked = tk.BooleanVar(value=c["locked"])
-        self.v_wave = tk.BooleanVar(value=c["wave"])
-        self.v_queue = tk.BooleanVar(value=c["show_queue"])
-        self.v_startup = tk.BooleanVar(value=os.path.exists(STARTUP_VBS))
-
-        m = self.menu = tk.Menu(self.root, tearoff=0)
-
-        def sub():
-            return tk.Menu(m, tearoff=0)
-
-        # görünüm
-        pos = sub()
-        pos.add_radiobutton(label=T("m_desktop"), value="desktop", variable=self.v_mode,
-                            command=self._set_mode)
-        pos.add_radiobutton(label=T("m_top"), value="top", variable=self.v_mode,
-                            command=self._set_mode)
-        m.add_cascade(label=T("m_layer"), menu=pos)
-        m.add_checkbutton(label=T("m_lock"), variable=self.v_locked,
-                          command=lambda: self._set("locked", self.v_locked.get()))
-        th = sub()
-        for k, val in (("th_system", "system"), ("th_dark", "dark"), ("th_light", "light")):
-            th.add_radiobutton(label=T(k), value=val, variable=self.v_theme,
-                               command=self._set_theme)
-        th.add_separator()
-        self.v_accent = tk.StringVar(value=c["accent"])
-        ac = tk.Menu(th, tearoff=0)
-        for val in ["auto"] + [n for n, _s in ACCENTS]:
-            ac.add_radiobutton(label=T("ac_" + val), value=val, variable=self.v_accent,
-                               command=self._set_accent)
-            if val == "auto":
-                ac.add_separator()
-        th.add_cascade(label=T("m_accent"), menu=ac)
-        self.v_bg = tk.StringVar(value=c["bg"])
-        bgm = tk.Menu(th, tearoff=0)
-        for val in ("solid", "glass", "clear"):
-            bgm.add_radiobutton(label=T("bg_" + val), value=val, variable=self.v_bg,
-                                command=lambda: self._set("bg", self.v_bg.get()))
-        th.add_cascade(label=T("m_bg"), menu=bgm)
-        m.add_cascade(label=T("m_theme"), menu=th)
-        self.v_scale = tk.DoubleVar(value=float(c["scale"]))
-        sz = sub()
-        for k, v in SIZES:
-            sz.add_radiobutton(label=f"{T(k)} (%{round(v * 100)})", value=v,
-                               variable=self.v_scale, command=lambda v=v: self._set_scale(v))
-        sz.add_separator()
-        sz.add_command(label=T("size_hint"), state="disabled")
-        m.add_cascade(label=T("m_size"), menu=sz)
-        op = sub()
-        for v in (100, 90, 80, 70, 60):
-            op.add_radiobutton(label=f"%{v}", value=v, variable=self.v_opacity,
-                               command=self._set_opacity)
-        m.add_cascade(label=T("m_opacity"), menu=op)
-        self.v_hover = tk.BooleanVar(value=c["hover_opaque"])
-        m.add_checkbutton(label=T("m_fade"), variable=self.v_hover,
-                          command=lambda: (self._set("hover_opaque", self.v_hover.get()),
-                                           self._alpha_step()))
-        self.v_idle = tk.IntVar(value=c["idle_opacity"])
-        idle = sub()
-        for v in (80, 70, 60, 50, 40, 30, 20):
-            idle.add_radiobutton(label=f"%{v}", value=v, variable=self.v_idle,
-                                 command=lambda: (self._set("idle_opacity", self.v_idle.get()),
-                                                  self._alpha_step()))
-        m.add_cascade(label=T("m_idle"), menu=idle)
-        self.v_mini = tk.BooleanVar(value=self.mini)
-        m.add_checkbutton(label=T("m_mini"), variable=self.v_mini, command=self._toggle_mini)
-        m.add_checkbutton(label=T("m_wave"), variable=self.v_wave,
-                          command=lambda: self._set("wave", self.v_wave.get()))
-        m.add_checkbutton(label=T("m_showlist"), variable=self.v_queue,
-                          command=lambda: self._set("show_queue", self.v_queue.get()))
-        self.v_rows = tk.IntVar(value=int(c["queue_rows"]))
-        rows = sub()
-        for v in (2, 3, 4, 5):
-            rows.add_radiobutton(label=T("rows_n", n=v), value=v, variable=self.v_rows,
-                                 command=lambda: self._set("queue_rows", self.v_rows.get()))
-        m.add_cascade(label=T("m_rows"), menu=rows)
-        m.add_separator()
-        # özellikler
-        self.v_notify = tk.BooleanVar(value=c["notify"])
-        m.add_checkbutton(label=T("m_notify"), variable=self.v_notify,
-                          command=lambda: self._set("notify", self.v_notify.get()))
-        if not hasattr(self, "v_sleep"):
-            self.v_sleep = tk.IntVar(value=0)
-        sl = sub()
-        for v in (0, 15, 30, 45, 60, 90):
-            sl.add_radiobutton(label=T("sleep_off") if v == 0 else T("sleep_n", n=v), value=v,
-                               variable=self.v_sleep, command=lambda v=v: self._set_sleep(v))
-        m.add_cascade(label=T("m_sleep"), menu=sl)
-        self.v_hotkeys = tk.BooleanVar(value=c["hotkeys"])
-        hk = sub()
-        hk.add_checkbutton(label=T("hk_enable"), variable=self.v_hotkeys,
-                           command=self._set_hotkeys)
-        hk.add_separator()
-        for *_x, keys, key in HOTKEYS:
-            hk.add_command(label=f"{keys}   {T(key)}", state="disabled")
-        m.add_cascade(label=T("m_hotkeys"), menu=hk)
-        self.v_react = tk.BooleanVar(value=c["react"])
-        m.add_checkbutton(label=T("m_react"), variable=self.v_react,
-                          command=lambda: self._set("react", self.v_react.get()))
-        self.v_duck = tk.BooleanVar(value=c["duck"])
-        m.add_checkbutton(label=T("m_duck"), variable=self.v_duck,
-                          command=lambda: self._set("duck", self.v_duck.get()))
-        self.v_osd = tk.BooleanVar(value=c["osd"])
-        m.add_checkbutton(label=T("m_osd"), variable=self.v_osd,
-                          command=lambda: self._set("osd", self.v_osd.get()))
-        al = sub()
-        self.v_alarm = tk.BooleanVar(value=bool(c["alarm"].get("on")))
-        al.add_checkbutton(label=T("al_on"), variable=self.v_alarm, command=self._toggle_alarm)
-        al.add_command(label=T("al_set", t=c["alarm"].get("time", "08:00")),
-                       command=lambda: AlarmDialog(self))
-        m.add_cascade(label=T("m_alarm"), menu=al)
-        m.add_separator()
-        m.add_command(label=T("m_search"), command=lambda: SearchDialog(self))
-        dev = tk.Menu(m, tearoff=0)
-        dev.configure(postcommand=lambda: self._fill_devices(dev))
-        m.add_cascade(label=T("m_devices"), menu=dev)
-        sh = sub()
-        sh.add_command(label=T("sh_link"), command=self._share_link)
-        sh.add_command(label=T("sh_card"), command=self._share_card)
-        m.add_cascade(label=T("m_share"), menu=sh)
-        m.add_command(label=T("m_import"), command=self._import_data)
-        self.v_lang = tk.StringVar(value=LANG)
-        lg = sub()
-        lg.add_radiobutton(label="Türkçe", value="tr", variable=self.v_lang,
-                           command=lambda: self._set_lang("tr"))
-        lg.add_radiobutton(label="English", value="en", variable=self.v_lang,
-                           command=lambda: self._set_lang("en"))
-        m.add_cascade(label="Dil / Language", menu=lg)
-        m.add_separator()
-        # Spotify
-        m.add_command(label=T("m_connect"), command=lambda: ConnectDialog(self))
-        m.add_command(label=T("m_disconnect"), command=self.web.disconnect)
-        self._disc_index = m.index("end")
-        m.add_command(label=T("m_open"), command=lambda: self._action("art"))
-        m.add_checkbutton(label=T("m_startup"), variable=self.v_startup,
-                          command=self._set_startup)
-        m.add_separator()
-        m.add_command(label=T("m_close"), command=self.root.destroy)
-
-    def _toggle_alarm(self):
-        self.cfg["alarm"] = dict(self.cfg["alarm"], on=bool(self.v_alarm.get()))
-        self.cfg.save()
-        self._alarm_day = None
-
-    def _set_hotkeys(self):
-        self._set("hotkeys", self.v_hotkeys.get())
-        if self.v_hotkeys.get():
-            self.hotkeys.start()
-        else:
-            self.hotkeys.stop()
-
+    # ---------------- menü (kendi çizdiğimiz Material menü: MenuPanel)
     def _on_menu(self, e):
-        try:
-            self.menu.entryconfig(self._disc_index,
-                                  state="normal" if self.web.connected else "disabled")
-            self.menu.tk_popup(e.x_root, e.y_root)
-        finally:
-            self.menu.grab_release()
+        MenuPanel.toggle(self, e.x_root, e.y_root)
 
     def _set(self, k, v):
         self.cfg[k] = v
         self.cfg.save()
         self.base_key = None
 
-    def _set_mode(self):
-        self._set("mode", self.v_mode.get())
+    def _set_mode(self, v):
+        self._set("mode", v)
         self._apply_mode()
 
-    def _set_theme(self):
-        self._set("theme", self.v_theme.get())
+    def _set_theme(self, v):
+        self._set("theme", v)
         self.light = self._is_light()
         self._start_palette(self._scheme())
 
-    def _set_accent(self):
-        self._set("accent", self.v_accent.get())
+    def _set_accent(self, v):
+        self._set("accent", v)
         self._start_palette(self._scheme())
 
-    def _set_opacity(self):
-        self._set("opacity", self.v_opacity.get())
+    def _set_opacity(self, v):
+        self._set("opacity", v)
         self.surface.alpha = self._target_alpha()
-        self.base_key = None
         self._render_all()
 
-    def _set_startup(self):
+    def _set_fade(self, k, v):
+        self._set(k, v)
+        self._alpha_step()
+
+    def _toggle_alarm(self, on):
+        self.cfg["alarm"] = dict(self.cfg["alarm"], on=bool(on))
+        self.cfg.save()
+        self._alarm_day = None
+
+    def _set_hotkeys(self, on):
+        self._set("hotkeys", on)
+        if on:
+            self.hotkeys.start()
+        else:
+            self.hotkeys.stop()
+
+    @staticmethod
+    def _startup_on():
+        return os.path.exists(STARTUP_VBS)
+
+    def _set_startup(self, on):
         try:
-            if self.v_startup.get():
+            if on:
                 if FROZEN:
                     cmd = f'"""{sys.executable}"""'
                 else:
@@ -4259,7 +4131,6 @@ class App:
                 os.remove(STARTUP_VBS)
         except Exception as e:  # noqa: BLE001
             log("başlangıç ayarı:", e)
-        self.v_startup.set(os.path.exists(STARTUP_VBS))
 
     def run(self):
         self.root.mainloop()
@@ -4516,6 +4387,626 @@ class ConnectDialog:
         self.top.destroy()
 
 
+# ------------------------------------------------------------------ sağ tık menüsü
+MI_BACK, MI_CHEV, MI_CHECK = "", "", ""
+MI = {"search": "", "mini": "", "lock": "", "share": "",
+      "open": "", "look": "", "alpha": "", "widget": "",
+      "notif": "", "sleep": "", "alarm": "", "device": "",
+      "account": "", "lang": "", "close": "", "import": "",
+      "link": "", "image": "", "auto": ""}
+
+
+class MenuPanel:
+    """Widget'la aynı Material You görünümlü, sayfalı sağ tık menüsü (katmanlı pencere).
+    Alt menüler açılır liste yerine aynı panelde sayfa olarak açılır."""
+    _inst = None
+    PW = 300          # panel genişliği (mantıksal px)
+    M = 14            # gölge payı
+    HEIGHTS = {"quick": 80, "sep": 9, "nav": 40, "toggle": 40, "action": 40, "radio": 38,
+               "seg": 66, "swatch": 66, "info": 24, "header": 30, "title": 50}
+
+    @classmethod
+    def toggle(cls, app, x, y):
+        if cls._inst is not None:  # açıksa: yeni konumda yeniden aç
+            cls._inst.close()
+        cls._inst = MenuPanel(app, x, y)
+
+    @classmethod
+    def close_open(cls):
+        if cls._inst is not None:
+            cls._inst.close()
+
+    def __init__(self, app, x, y):
+        self.app = app
+        self.S = S = app.dpi
+        self.F = {k: TextFont(n, px, S, bold=(n == "seguisb.ttf")) for k, (n, px) in {
+            "label": ("segoeui.ttf", 13), "value": ("segoeui.ttf", 12),
+            "head": ("seguisb.ttf", 11), "title": ("seguisb.ttf", 15),
+            "seg": ("segoeui.ttf", 12), "segb": ("seguisb.ttf", 12),
+            "tiny": ("segoeui.ttf", 10)}.items()}
+        self._ifonts = {}
+        self.pages = ["main"]
+        self.scroll = 0.0
+        self.hover = None
+        self.hits = []
+        self.devices = None      # None: yükleniyor, list, ya da "err"
+        self.anchor = (x, y)
+        wa = self._work_area(x, y)
+        self.max_h = (wa.bottom - wa.top) / S - 2 * self.M - 8
+        self.WM = round((self.PW + 2 * self.M) * S)
+        self.HM = round((self.max_h + 2 * self.M) * S) + 2
+        t = self.top = tk.Toplevel(app.root)
+        t.overrideredirect(True)
+        t.configure(bg="black")
+        t.geometry(f"{self.WM}x{self.HM}+-30000+-30000")
+        t.update_idletasks()
+        self.hwnd = user32.GetAncestor(t.winfo_id(), 2)
+        ex = user32.GetWindowLongPtrW(self.hwnd, GWL_EXSTYLE)
+        user32.SetWindowLongPtrW(self.hwnd, GWL_EXSTYLE,
+                                 (ex | WS_EX_LAYERED | WS_EX_TOOLWINDOW) & ~WS_EX_APPWINDOW)
+        user32.SetWindowLongPtrW(self.hwnd, GWLP_HWNDPARENT, 0)
+        self.surface = LayeredSurface(self.hwnd, self.WM, self.HM)
+        self.surface.alpha = 0
+        t.bind("<Motion>", self._on_motion)
+        t.bind("<Leave>", lambda _e: self._set_hover(None))
+        t.bind("<ButtonRelease-1>", self._on_click)
+        t.bind("<MouseWheel>", self._on_wheel)
+        t.bind("<Escape>", lambda _e: self._back_or_close())
+        t.bind("<BackSpace>", lambda _e: self._back_or_close())
+        self._closing = False
+        self.render(place=True)
+        user32.SetWindowPos(self.hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOMOVE)
+        t.focus_force()
+        user32.SetForegroundWindow(self.hwnd)
+        self._fade(0)
+        t.after(250, lambda: t.bind("<FocusOut>", self._on_focus_out))
+        self._was_down = True
+        self._watch()
+
+    def _watch(self):
+        """Odak alınamazsa da çalışsın: panelin dışına tıklanınca kapan."""
+        if self._closing:
+            return
+        down = bool(user32.GetAsyncKeyState(0x01) & 0x8000 or user32.GetAsyncKeyState(0x02) & 0x8000)
+        if down and not self._was_down:
+            pt = wintypes.POINT()
+            user32.GetCursorPos(ctypes.byref(pt))
+            S, M = self.S, self.M
+            x0, y0 = self.pos[0] + round(M * S), self.pos[1] + round(M * S)
+            if not (x0 <= pt.x <= x0 + round(self.PW * S) and y0 <= pt.y <= y0 + round(self.vh * S)):
+                self.close()
+                return
+        self._was_down = down
+        self.top.after(40, self._watch)
+
+    # -- yardımcılar
+    @staticmethod
+    def _work_area(x, y):
+        pt = wintypes.POINT(x, y)
+        user32.MonitorFromPoint.restype = ctypes.c_void_p
+        user32.MonitorFromPoint.argtypes = [wintypes.POINT, wintypes.DWORD]
+        mi = MONITORINFO()
+        mi.cbSize = ctypes.sizeof(MONITORINFO)
+        user32.GetMonitorInfoW(user32.MonitorFromPoint(pt, 2), ctypes.byref(mi))
+        return mi.rcWork
+
+    def icon(self, px):
+        f = self._ifonts.get(px)
+        if f is None:
+            f = self._ifonts[px] = ImageFont.truetype(self.app._icon_path, max(6, round(px * self.S)))
+        return f
+
+    def _fade(self, step):
+        if self._closing:
+            return
+        self.surface.alpha = min(255, round(255 * (step + 1) / 5))
+        self.surface._commit(None)
+        if step < 4:
+            self.top.after(14, lambda: self._fade(step + 1))
+
+    def close(self):
+        if self._closing:
+            return
+        self._closing = True
+        MenuPanel._inst = None
+        try:
+            self.top.destroy()
+        except tk.TclError:
+            pass
+
+    def _on_focus_out(self, _e):
+        # odak gerçekten başka bir pencereye geçtiyse kapan
+        self.top.after(60, lambda: (None if self._closing or
+                                    user32.GetForegroundWindow() == self.hwnd else self.close()))
+
+    def _back_or_close(self):
+        if len(self.pages) > 1:
+            self._go_back()
+        else:
+            self.close()
+
+    def _open_page(self, page):
+        self.pages.append(page)
+        self.scroll = 0.0
+        self.hover = None
+        if page == "devices":
+            self._load_devices()
+        self.render()
+
+    def _go_back(self):
+        if len(self.pages) > 1:
+            self.pages.pop()
+            self.scroll = 0.0
+            self.hover = None
+            self.render()
+
+    def _then_close(self, fn):
+        """İşlemi yap ve menüyü kapat (pencere açan / tek seferlik işlemler)."""
+        def go():
+            self.close()
+            fn()
+        return go
+
+    def _load_devices(self):
+        self.devices = None
+        web = self.app.web
+        if not web.connected:
+            self.devices = "need"
+            return
+
+        def work():
+            try:
+                self.devices = web.devices()
+            except Exception as e:  # noqa: BLE001
+                log("cihazlar:", repr(e))
+                self.devices = "err"
+
+        th = threading.Thread(target=work, daemon=True)
+        th.start()
+
+        def wait():
+            if self._closing:
+                return
+            if th.is_alive():
+                self.top.after(150, wait)
+            elif self.pages[-1] == "devices":
+                self.render()
+
+        wait()
+
+    # -- sayfalar (her çizimde güncel durumdan yeniden kurulur)
+    def items(self):
+        app, c = self.app, self.app.cfg
+        page = self.pages[-1]
+        if page == "main":
+            th = {"system": T("th_system"), "dark": T("th_dark"), "light": T("th_light")}
+            mins = app._sleep_minutes()
+            al = c["alarm"]
+            return [
+                {"t": "quick", "buttons": [
+                    ("q_search", MI["search"], T("q_search"), False,
+                     self._then_close(lambda: SearchDialog(app))),
+                    ("q_mini", MI["mini"], T("q_mini"), app.mini, app._toggle_mini),
+                    ("q_lock", MI["lock"], T("q_lock"), c["locked"],
+                     lambda: app._set("locked", not c["locked"])),
+                    ("q_share", MI["share"], T("q_share"), False,
+                     lambda: self._open_page("share")),
+                    ("q_open", MI["open"], T("q_open"), False,
+                     self._then_close(lambda: app._action("art")))]},
+                {"t": "sep"},
+                {"t": "nav", "id": "p_look", "icon": MI["look"], "label": T("mn_appearance"),
+                 "value": th.get(c["theme"], ""), "page": "look"},
+                {"t": "nav", "id": "p_alpha", "icon": MI["alpha"], "label": T("mn_transparency"),
+                 "value": f'%{c["opacity"]}', "page": "alpha"},
+                {"t": "nav", "id": "p_widget", "icon": MI["widget"], "label": T("mn_widget"),
+                 "value": "", "page": "widget"},
+                {"t": "sep"},
+                {"t": "nav", "id": "p_notif", "icon": MI["notif"], "label": T("mn_notif"),
+                 "value": "", "page": "notif"},
+                {"t": "nav", "id": "p_sleep", "icon": MI["sleep"], "label": T("m_sleep"),
+                 "value": T("sleep_left", m=mins) if mins else T("off"), "page": "sleep"},
+                {"t": "nav", "id": "p_alarm", "icon": MI["alarm"], "label": T("m_alarm"),
+                 "value": al.get("time", "08:00") if al.get("on") else T("off"), "page": "alarm"},
+                {"t": "sep"},
+                {"t": "nav", "id": "p_dev", "icon": MI["device"], "label": T("m_devices"),
+                 "value": "", "page": "devices"},
+                {"t": "nav", "id": "p_acc", "icon": MI["account"], "label": T("mn_account"),
+                 "value": T("acc_on") if app.web.connected else T("acc_off"), "page": "account"},
+                {"t": "nav", "id": "p_lang", "icon": MI["lang"], "label": T("mn_language"),
+                 "value": "Türkçe" if LANG == "tr" else "English", "page": "lang"},
+                {"t": "sep"},
+                {"t": "action", "id": "a_close", "icon": MI["close"], "label": T("m_close"),
+                 "do": self._then_close(app.root.destroy)},
+            ]
+        title = {"look": T("mn_appearance"), "alpha": T("mn_transparency"),
+                 "widget": T("mn_widget"), "notif": T("mn_notif"), "sleep": T("m_sleep"),
+                 "alarm": T("m_alarm"), "devices": T("m_devices"), "account": T("mn_account"),
+                 "lang": T("mn_language"), "share": T("mn_share")}[page]
+        out = [{"t": "title", "label": title}]
+        if page == "look":
+            out += [
+                {"t": "seg", "id": "s_theme", "label": T("m_theme"), "value": c["theme"],
+                 "options": [("system", T("th_system")), ("dark", T("th_dark")),
+                             ("light", T("th_light"))], "set": app._set_theme},
+                {"t": "swatch", "id": "s_acc", "label": T("m_accent"), "value": c["accent"],
+                 "options": [("auto", None)] + list(ACCENTS), "set": app._set_accent},
+                {"t": "seg", "id": "s_bg", "label": T("m_bg"), "value": c["bg"],
+                 "options": [("solid", T("bg_solid")), ("glass", T("bg_glass").split(" (")[0]),
+                             ("clear", T("bg_clear"))], "set": lambda v: app._set("bg", v)},
+                {"t": "seg", "id": "s_size", "label": T("m_size"),
+                 "value": min(SIZES, key=lambda kv: abs(kv[1] - float(c["scale"])))[1],
+                 "options": [(v, T(k)) for k, v in SIZES], "set": app._set_scale},
+                {"t": "info", "label": T("size_hint")},
+            ]
+        elif page == "alpha":
+            out += [
+                {"t": "seg", "id": "s_op", "label": T("m_opacity"), "value": c["opacity"],
+                 "options": [(v, f"%{v}") for v in (100, 90, 80, 70, 60)],
+                 "set": app._set_opacity},
+                {"t": "toggle", "id": "t_fade", "label": T("m_fade"), "on": c["hover_opaque"],
+                 "set": lambda v: app._set_fade("hover_opaque", v)},
+                {"t": "seg", "id": "s_idle", "label": T("m_idle_s"), "value": c["idle_opacity"],
+                 "options": [(v, f"%{v}") for v in (80, 70, 60, 50, 40, 30, 20)],
+                 "set": lambda v: app._set_fade("idle_opacity", v),
+                 "disabled": not c["hover_opaque"]},
+            ]
+        elif page == "widget":
+            out += [
+                {"t": "seg", "id": "s_layer", "label": T("m_layer"), "value": c["mode"],
+                 "options": [("desktop", T("seg_desktop")), ("top", T("seg_top"))],
+                 "set": app._set_mode},
+                {"t": "toggle", "id": "t_mini", "label": T("m_mini"), "on": app.mini,
+                 "set": lambda v: app._toggle_mini()},
+                {"t": "toggle", "id": "t_lock", "label": T("m_lock"), "on": c["locked"],
+                 "set": lambda v: app._set("locked", v)},
+                {"t": "toggle", "id": "t_wave", "label": T("m_wave"), "on": c["wave"],
+                 "set": lambda v: app._set("wave", v)},
+                {"t": "toggle", "id": "t_react", "label": T("m_react"), "on": c["react"],
+                 "set": lambda v: app._set("react", v), "disabled": not c["wave"]},
+                {"t": "toggle", "id": "t_list", "label": T("m_showlist").split(" (")[0],
+                 "on": c["show_queue"], "set": lambda v: app._set("show_queue", v)},
+                {"t": "seg", "id": "s_rows", "label": T("m_rows_s"), "value": int(c["queue_rows"]),
+                 "options": [(v, str(v)) for v in (2, 3, 4, 5)],
+                 "set": lambda v: app._set("queue_rows", v)},
+                {"t": "toggle", "id": "t_start", "label": T("m_startup"),
+                 "on": app._startup_on(), "set": app._set_startup},
+            ]
+        elif page == "notif":
+            out += [
+                {"t": "toggle", "id": "t_notify", "label": T("m_notify"), "on": c["notify"],
+                 "set": lambda v: app._set("notify", v)},
+                {"t": "toggle", "id": "t_osd", "label": T("m_osd"), "on": c["osd"],
+                 "set": lambda v: app._set("osd", v)},
+                {"t": "toggle", "id": "t_duck", "label": T("m_duck"), "on": c["duck"],
+                 "set": lambda v: app._set("duck", v)},
+                {"t": "sep"},
+                {"t": "toggle", "id": "t_hk", "label": T("hk_enable"), "on": c["hotkeys"],
+                 "set": app._set_hotkeys},
+                {"t": "header", "label": T("hk_list")},
+            ] + [{"t": "info", "label": T(key), "value": keys} for *_x, keys, key in HOTKEYS]
+        elif page == "sleep":
+            cur = app.sleep_choice if app.sleep_end is not None else 0
+            out += [{"t": "radio", "id": f"r_sl{v}", "label": T("sleep_off") if v == 0
+                     else T("sleep_n", n=v), "on": cur == v,
+                     "do": (lambda v=v: app._set_sleep(v))} for v in (0, 15, 30, 45, 60, 90)]
+            mins = app._sleep_minutes()
+            if mins:
+                out.append({"t": "info", "label": T("sleep_left", m=mins)})
+        elif page == "alarm":
+            al = c["alarm"]
+            out += [
+                {"t": "toggle", "id": "t_alarm", "label": T("al_on"), "on": bool(al.get("on")),
+                 "set": app._toggle_alarm},
+                {"t": "action", "id": "a_alarm", "icon": MI["alarm"],
+                 "label": T("al_set", t=al.get("time", "08:00")),
+                 "do": self._then_close(lambda: AlarmDialog(app))},
+            ]
+        elif page == "devices":
+            d = self.devices
+            if d is None:
+                out.append({"t": "info", "label": T("loading")})
+            elif d == "need":
+                out.append({"t": "action", "id": "a_conn", "icon": MI["account"],
+                            "label": T("m_connect"),
+                            "do": self._then_close(lambda: ConnectDialog(app))})
+            elif d == "err":
+                out.append({"t": "info", "label": T("dev_err")})
+            elif not d:
+                out.append({"t": "info", "label": T("dev_none")})
+            else:
+                out += [{"t": "radio", "id": f"r_dev{i}", "label": dv["name"],
+                         "value": dv["type"], "on": dv["active"],
+                         "do": self._then_close(lambda i=dv["id"]: app._transfer(i))}
+                        for i, dv in enumerate(d)]
+        elif page == "account":
+            web = app.web
+            if web.connected:
+                out += [{"t": "info", "label": "✓ " + T("acc_on")},
+                        {"t": "action", "id": "a_re", "icon": MI["account"],
+                         "label": T("m_reconnect"),
+                         "do": self._then_close(lambda: ConnectDialog(app, reauth=True))},
+                        {"t": "action", "id": "a_disc", "icon": MI["close"],
+                         "label": T("m_disconnect"), "do": web.disconnect}]
+            else:
+                out.append({"t": "action", "id": "a_conn", "icon": MI["account"],
+                            "label": T("m_connect"),
+                            "do": self._then_close(lambda: ConnectDialog(app))})
+            out += [{"t": "sep"},
+                    {"t": "action", "id": "a_imp", "icon": MI["import"], "label": T("m_import"),
+                     "do": self._then_close(app._import_data)}]
+        elif page == "lang":
+            out += [{"t": "radio", "id": "r_tr", "label": "Türkçe", "on": LANG == "tr",
+                     "do": lambda: app._set_lang("tr")},
+                    {"t": "radio", "id": "r_en", "label": "English", "on": LANG == "en",
+                     "do": lambda: app._set_lang("en")}]
+        elif page == "share":
+            out += [{"t": "action", "id": "a_link", "icon": MI["link"], "label": T("sh_link"),
+                     "do": self._then_close(app._share_link)},
+                    {"t": "action", "id": "a_card", "icon": MI["image"], "label": T("sh_card"),
+                     "do": self._then_close(app._share_card)}]
+        return out
+
+    # -- çizim
+    def render(self, place=False):
+        if self._closing:
+            return
+        app, S, F = self.app, self.S, self.F
+        P = app.pal_to
+        X = lambda v: v * S  # noqa: E731
+        items = self.items()
+        PW, M = self.PW, self.M
+        total = 8 + sum(self.HEIGHTS[it["t"]] for it in items) + 8
+        vh = min(total, self.max_h)
+        self.scroll = max(0.0, min(self.scroll, total - vh))
+        content = Image.new("RGBA", (round(X(PW)), round(X(total))), (0, 0, 0, 0))
+        d = Drawer(content)
+        hits = []
+        hov = self.hover
+        on, var, pri = P["on_surface"] + (255,), P["on_surface_variant"] + (255,), \
+            P["primary"] + (255,)
+        y = 8
+        for it in items:
+            h = self.HEIGHTS[it["t"]]
+            t = it["t"]
+            iid = it.get("id")
+            dis = it.get("disabled")
+            if t in ("nav", "toggle", "action", "radio") and hov == iid and not dis:
+                rr(content, X(6), X(y + 2), X(PW - 6), X(y + h - 2), X(12), P["on_surface"],
+                   alpha=22)
+            if t == "quick":
+                bw = (PW - 16) / len(it["buttons"])
+                for i, (bid, glyph, lbl, active, _fn) in enumerate(it["buttons"]):
+                    cx = 8 + bw * (i + 0.5)
+                    col = P["primary_container"] if active else P["surface_highest"]
+                    if hov == bid:
+                        col = mix(col, P["on_surface"], 0.10)
+                    rr(content, X(cx - 22), X(y + 8), X(cx + 22), X(y + 52), X(16), col)
+                    d.text((X(cx), X(y + 30)), glyph, font=self.icon(17),
+                           fill=(P["on_primary_container"] if active else P["on_surface"])
+                           + (255,), anchor="mm")
+                    d.text((X(cx), X(y + 66)), lbl, font=F["tiny"], fill=var, anchor="mm")
+                    hits.append((bid, cx - bw / 2, y, cx + bw / 2, y + h, _fn))
+            elif t == "sep":
+                rr(content, X(16), X(y + 4), X(PW - 16), X(y + 5), 0, P["on_surface"], alpha=24)
+            elif t == "title":
+                bh = "back"
+                if hov == bh:
+                    rr(content, X(8), X(y + 7), X(44), X(y + 43), 0, P["on_surface"], alpha=22,
+                       ellipse=True)
+                d.text((X(26), X(y + 25)), MI_BACK, font=self.icon(15), fill=on, anchor="mm")
+                d.text((X(52), X(y + 25)), it["label"], font=F["title"], fill=on, anchor="lm")
+                hits.append((bh, 0, y, PW, y + h, self._go_back))
+            elif t == "header":
+                d.text((X(18), X(y + 18)), it["label"], font=F["head"], fill=pri, anchor="lm")
+            elif t == "info":
+                d.text((X(18), X(y + h / 2)), fit_text(it["label"], F["value"], X(PW - 120)
+                                                       if it.get("value") else X(PW - 36)),
+                       font=F["value"], fill=var, anchor="lm")
+                if it.get("value"):
+                    d.text((X(PW - 18), X(y + h / 2)), it["value"], font=F["value"], fill=on,
+                           anchor="rm")
+            elif t in ("nav", "action", "toggle", "radio"):
+                fg = on if not dis else P["outline"] + (255,)
+                lx = 18
+                if it.get("icon"):
+                    d.text((X(30), X(y + h / 2)), it["icon"], font=self.icon(16),
+                           fill=var if not dis else fg, anchor="mm")
+                    lx = 52
+                right = 0
+                if t == "nav":
+                    d.text((X(PW - 22), X(y + h / 2)), MI_CHEV, font=self.icon(11), fill=var,
+                           anchor="mm")
+                    right = 34
+                    if it.get("value"):
+                        d.text((X(PW - right), X(y + h / 2)), it["value"], font=F["value"],
+                               fill=var, anchor="rm")
+                        right += F["value"].getlength(it["value"]) / S + 8
+                elif t == "toggle":
+                    self._switch(content, PW - 54, y + h / 2, it["on"], dis, P)
+                    right = 64
+                elif t == "radio":
+                    if it["on"]:
+                        d.text((X(PW - 24), X(y + h / 2)), MI_CHECK, font=self.icon(14),
+                               fill=pri, anchor="mm")
+                    right = 40
+                    if it.get("value"):
+                        d.text((X(PW - right), X(y + h / 2)), it["value"], font=F["value"],
+                               fill=var, anchor="rm")
+                        right += F["value"].getlength(it["value"]) / S + 8
+                    if it["on"]:
+                        fg = pri
+                d.text((X(lx), X(y + h / 2)), fit_text(it["label"], F["label"],
+                                                       X(PW - lx - right - 6)),
+                       font=F["label"], fill=fg, anchor="lm")
+                if not dis:
+                    if t == "nav":
+                        fn = (lambda p=it["page"]: self._open_page(p))
+                    elif t == "toggle":
+                        fn = (lambda it=it: it["set"](not it["on"]))
+                    else:
+                        fn = it["do"]
+                    hits.append((iid, 6, y, PW - 6, y + h, fn))
+            elif t == "seg":
+                d.text((X(18), X(y + 14)), it["label"], font=F["value"],
+                       fill=var if not dis else P["outline"] + (255,), anchor="lm")
+                opts = it["options"]
+                x0, x1, sy0, sy1 = 14, PW - 14, y + 26, y + 58
+                rr(content, X(x0), X(sy0), X(x1), X(sy1), X(16), P["outline"], alpha=110)
+                rr(content, X(x0 + 1), X(sy0 + 1), X(x1 - 1), X(sy1 - 1), X(15), P["surface_high"])
+                sw = (x1 - x0) / len(opts)
+                for i, (val, lbl) in enumerate(opts):
+                    sx0 = x0 + i * sw
+                    sel = val == it["value"]
+                    sid = f'{iid}:{i}'
+                    if sel:
+                        rr(content, X(sx0 + 3), X(sy0 + 3), X(sx0 + sw - 3), X(sy1 - 3), X(13),
+                           P["secondary_container"])
+                    elif hov == sid and not dis:
+                        rr(content, X(sx0 + 3), X(sy0 + 3), X(sx0 + sw - 3), X(sy1 - 3), X(13),
+                           P["on_surface"], alpha=20)
+                    col = (P["on_secondary_container"] if sel else P["on_surface"]) \
+                        if not dis else P["outline"]
+                    d.text((X(sx0 + sw / 2), X((sy0 + sy1) / 2)),
+                           fit_text(lbl, F["segb" if sel else "seg"], X(sw - 8)),
+                           font=F["segb" if sel else "seg"], fill=col + (255,), anchor="mm")
+                    if not dis:
+                        hits.append((sid, sx0, sy0, sx0 + sw, sy1,
+                                     (lambda s=it["set"], v=val: s(v))))
+            elif t == "swatch":
+                d.text((X(18), X(y + 14)), it["label"], font=F["value"], fill=var, anchor="lm")
+                opts = it["options"]
+                sw = (PW - 28) / len(opts)
+                for i, (val, seed) in enumerate(opts):
+                    cx, cy = 14 + sw * (i + 0.5), y + 44
+                    sid = f'{iid}:{i}'
+                    sel = val == it["value"]
+                    if sel or hov == sid:
+                        rr(content, X(cx - 15), X(cy - 15), X(cx + 15), X(cy + 15), 0,
+                           P["primary"] if sel else P["outline"], ellipse=True)
+                        rr(content, X(cx - 13), X(cy - 13), X(cx + 13), X(cy + 13), 0,
+                           P["surface_high"], ellipse=True)
+                    if seed is None:  # albüm kapağından
+                        rr(content, X(cx - 11), X(cy - 11), X(cx + 11), X(cy + 11), 0,
+                           P["surface_highest"], ellipse=True)
+                        d.text((X(cx), X(cy)), MI["auto"], font=self.icon(12), fill=on,
+                               anchor="mm")
+                    else:
+                        ck = (seed, app.light)
+                        cache = self.__dict__.setdefault("_sw", {})
+                        if ck not in cache:
+                            cache[ck] = build_scheme(seed, app.light)["primary"]
+                        col = cache[ck]
+                        rr(content, X(cx - 11), X(cy - 11), X(cx + 11), X(cy + 11), 0, col,
+                           ellipse=True)
+                    hits.append((sid, cx - sw / 2, y + 26, cx + sw / 2, y + 62,
+                                 (lambda s=it["set"], v=val: s(v))))
+            y += h
+
+        # pencereye yerleştir: gölge + kart + içerik
+        sk = (vh, P["surface_high"])
+        if getattr(self, "_bg_key", None) != sk:  # gölge + kart zemini (yükseklik değişince)
+            from PIL import ImageFilter
+            bg = Image.new("RGBA", (self.WM, self.HM), (0, 0, 0, 0))
+            shadow = Image.new("RGBA", (round(X(PW + 2 * M)), round(X(vh + 2 * M))),
+                               (0, 0, 0, 0))
+            rr(shadow, X(M), X(M + 3), X(M + PW), X(M + vh + 3), X(18), (0, 0, 0), alpha=110)
+            bg.alpha_composite(shadow.filter(ImageFilter.GaussianBlur(X(7))))
+            rr(bg, X(M), X(M), X(M + PW), X(M + vh), X(18), P["surface_high"])
+            self._bg, self._bg_key = bg, sk
+        canvas = self._bg.copy()
+        part = content.crop((0, round(X(self.scroll)), content.width,
+                             round(X(self.scroll + vh))))
+        mask = _rr_mask(part.width, part.height, 0, 0, part.width, part.height, X(18))
+        a = part.getchannel("A")
+        part.putalpha(Image.composite(a, Image.new("L", a.size, 0), mask))
+        canvas.alpha_composite(part, (round(X(M)), round(X(M))))
+        if total > vh:  # kaydırma çubuğu
+            th_ = vh * vh / total
+            ty = self.scroll / (total - vh) * (vh - th_)
+            rr(canvas, X(M + PW - 6), X(M + ty + 4), X(M + PW - 3), X(M + ty + th_ - 4),
+               X(1.5), P["on_surface"], alpha=70)
+        self.hits = hits
+        self.vh = vh
+        self.surface.full(canvas)
+        self._place(vh, place)
+
+    def _switch(self, img, x, cy, on, dis, P):
+        X = lambda v: v * self.S  # noqa: E731
+        w, h = 40, 24
+        if on:
+            rr(img, X(x), X(cy - h / 2), X(x + w), X(cy + h / 2), X(h / 2),
+               P["primary"] if not dis else P["outline"])
+            r = 9
+            cx = x + w - h / 2
+            rr(img, X(cx - r), X(cy - r), X(cx + r), X(cy + r), 0, P["on_primary"], ellipse=True)
+        else:
+            rr(img, X(x), X(cy - h / 2), X(x + w), X(cy + h / 2), X(h / 2), P["outline"],
+               alpha=200 if not dis else 90)
+            rr(img, X(x + 2), X(cy - h / 2 + 2), X(x + w - 2), X(cy + h / 2 - 2), X(h / 2 - 2),
+               P["surface_highest"])
+            r = 6
+            cx = x + h / 2
+            rr(img, X(cx - r), X(cy - r), X(cx + r), X(cy + r), 0, P["outline"], ellipse=True)
+
+    def _place(self, vh, first):
+        """İlk açılışta imleç konumuna; sayfa değişince ekrandan taşmayacak şekilde."""
+        S, M = self.S, self.M
+        ax, ay = self.anchor
+        wa = self._work_area(ax, ay)
+        w, h = round((self.PW + 2 * M) * S), round((vh + 2 * M) * S)
+        if first:
+            x = ax - round(M * S) + 2
+            y = ay - round(M * S) + 2
+            if x + w > wa.right:
+                x = ax - w + round(M * S) - 2
+            if y + h > wa.bottom:  # aşağı sığmıyorsa yukarı aç
+                y = ay - h + round(M * S) - 2
+            self.pos = [x, y]
+        x, y = self.pos
+        x = max(wa.left - round(M * S), min(x, wa.right - w + round(M * S)))
+        y = max(wa.top - round(M * S), min(y, wa.bottom - h + round(M * S)))
+        self.pos = [x, y]
+        move_window(self.hwnd, x, y)
+
+    # -- olaylar
+    def _hit(self, e):
+        x = e.x / self.S - self.M
+        y = e.y / self.S - self.M
+        if not (0 <= x <= self.PW and 0 <= y <= self.vh):
+            return None
+        y += self.scroll
+        for h in self.hits:
+            if h[1] <= x <= h[3] and h[2] <= y <= h[4]:
+                return h
+        return None
+
+    def _set_hover(self, hid):
+        if hid != self.hover:
+            self.hover = hid
+            self.top.config(cursor="hand2" if hid else "")
+            self.render()
+
+    def _on_motion(self, e):
+        h = self._hit(e)
+        self._set_hover(h[0] if h else None)
+
+    def _on_click(self, e):
+        h = self._hit(e)
+        x, y = e.x / self.S - self.M, e.y / self.S - self.M
+        if h is None:
+            if not (0 <= x <= self.PW and 0 <= y <= self.vh):
+                self.close()  # gölgeye / dışarıya tıklama
+            return
+        h[5]()
+        if not self._closing:
+            self.app.base_key = None
+            self.render()
+
+    def _on_wheel(self, e):
+        self.scroll -= e.delta / 120 * 40
+        self.render()
+
+
 def copy_image_to_clipboard(img):
     """PIL görüntüsünü Windows panosuna (CF_DIB) koyar."""
     buf = io.BytesIO()
@@ -4765,8 +5256,6 @@ class AlarmDialog(_Dialog):
         self.app.cfg["alarm"] = {"on": bool(self.on.get()), "time": f"{h:02d}:{m:02d}"}
         self.app.cfg.save()
         self.app._alarm_day = None
-        self.app.menu.destroy()
-        self.app._build_menu()
         self.close()
 
 
