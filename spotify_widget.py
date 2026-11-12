@@ -159,6 +159,15 @@ STRINGS = {
         "m_osd": "Kısayolda ekran göstergesi",
         "osd_play": "Çalıyor", "osd_pause": "Duraklatıldı", "osd_vol": "Ses",
         "m_search": "Şarkı ara…  (Ctrl+Alt+S)", "hk_search": "Şarkı ara",
+        "hk_like": "Beğen / beğeniyi kaldır", "osd_liked": "Beğenildi",
+        "osd_unliked": "Beğeni kaldırıldı", "like_wait": "Şarkı henüz tanınmadı, birazdan tekrar dene",
+        "hs_title": "Dinleme geçmişinde ara", "hs_hint": "Şarkı ya da sanatçı adı yaz",
+        "hs_song": "Şarkı", "hs_artist": "Sanatçı", "hs_time": "Süre", "hs_plays": "Çalma",
+        "hs_days": "Gün", "hs_first": "İlk", "hs_last": "Son", "hs_none": "Eşleşen kayıt yok",
+        "hs_count": "{n} sonuç", "hs_open": "Spotify'da aç", "hs_menu": "Geçmişte ara…",
+        "hs_detail": ("{name}\nToplam {dur} · {plays} çalma · {days} farklı gün\n"
+                      "İlk: {first}   ·   Son: {last}   ·   En çok: {year}"),
+        "hs_empty": "Önce Spotify verini içe aktar (menü → Spotify hesabı).",
         "s_title": "Şarkı ara", "s_hint": "Şarkı, sanatçı ya da albüm yaz ve Enter'a bas",
         "s_play": "Çal", "s_queue": "Sıraya ekle", "s_none": "Sonuç yok", "s_queued": "Sıraya eklendi ✓",
         "s_need": "Bu özellik için Spotify hesabını bağla.",
@@ -275,6 +284,15 @@ STRINGS = {
         "m_osd": "On-screen display for shortcuts",
         "osd_play": "Playing", "osd_pause": "Paused", "osd_vol": "Volume",
         "m_search": "Search songs…  (Ctrl+Alt+S)", "hk_search": "Search songs",
+        "hk_like": "Like / unlike", "osd_liked": "Liked", "osd_unliked": "Removed from Liked",
+        "like_wait": "Song not recognized yet, try again in a moment",
+        "hs_title": "Search listening history", "hs_hint": "Type a song or artist name",
+        "hs_song": "Song", "hs_artist": "Artist", "hs_time": "Time", "hs_plays": "Plays",
+        "hs_days": "Days", "hs_first": "First", "hs_last": "Last", "hs_none": "No matches",
+        "hs_count": "{n} results", "hs_open": "Open in Spotify", "hs_menu": "Search history…",
+        "hs_detail": ("{name}\nTotal {dur} · {plays} plays · {days} different days\n"
+                      "First: {first}   ·   Last: {last}   ·   Most: {year}"),
+        "hs_empty": "Import your Spotify data first (menu → Spotify account).",
         "s_title": "Search songs", "s_hint": "Type a song, artist or album and press Enter",
         "s_play": "Play", "s_queue": "Add to queue", "s_none": "No results", "s_queued": "Added to queue ✓",
         "s_need": "Connect your Spotify account to use this.",
@@ -423,12 +441,13 @@ def import_spotify_history(paths):
         if ti is None:
             ti = t_idx[tk_] = len(tracks)
             tracks.append([title, ai])
-        d = days.setdefault(day, {"s": 0.0, "p": 0, "a": {}, "t": {}, "h": {}})
+        d = days.setdefault(day, {"s": 0.0, "p": 0, "a": {}, "t": {}, "h": {}, "c": {}})
         d["s"] += sec
         hr = str(local.hour)
         d["h"][hr] = d["h"].get(hr, 0.0) + sec
         if ms >= 30000:  # Spotify 30 sn'yi bir dinleme sayar
             d["p"] += 1
+            d["c"][ti] = d["c"].get(ti, 0) + 1
         d["a"][ai] = d["a"].get(ai, 0.0) + sec
         d["t"][ti] = d["t"].get(ti, 0.0) + sec
         n += 1
@@ -442,7 +461,8 @@ def import_spotify_history(paths):
         d["a"] = {str(k): round(v, 1) for k, v in d["a"].items()}
         d["t"] = {str(k): round(v, 1) for k, v in d["t"].items()}
         d["h"] = {k: round(v, 1) for k, v in d["h"].items()}
-    data = {"version": 2, "first": first, "last": last, "artists": artists, "tracks": tracks,
+        d["c"] = {str(k): v for k, v in d["c"].items()}
+    data = {"version": 3, "first": first, "last": last, "artists": artists, "tracks": tracks,
             "days": days}
     with open(STATS_IMPORT_PATH, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, separators=(",", ":"))
@@ -459,6 +479,7 @@ def load_imported_history():
         out = {}
         for day, d in data["days"].items():
             out[day] = {"sec": d["s"], "plays": d["p"], "hours": d.get("h", {}),
+                        "counts": {tnames[int(k)]: v for k, v in d.get("c", {}).items()},
                         "artists": {artists[int(k)]: v for k, v in d["a"].items()},
                         "tracks": {tnames[int(k)]: v for k, v in d["t"].items()}}
         return out
@@ -688,6 +709,75 @@ def fullscreen_app(own=()):
     return None
 
 
+def _spotify_exe():
+    """Spotify'ın kurulu olduğu exe (protokol kaydından ya da varsayılan konumdan)."""
+    try:
+        with winreg.OpenKey(winreg.HKEY_CLASSES_ROOT, r"spotify\shell\open\command") as k:
+            cmd = winreg.QueryValueEx(k, "")[0]
+        exe = cmd.split('"')[1] if cmd.startswith('"') else cmd.split(" ")[0]
+        if exe.lower().endswith(".exe") and os.path.exists(exe):
+            return exe
+    except (OSError, IndexError):
+        pass
+    exe = os.path.join(os.environ.get("APPDATA", ""), "Spotify", "Spotify.exe")
+    return exe if os.path.exists(exe) else None
+
+
+def _spotify_window():
+    """Spotify'ın görünen ana penceresi (yoksa None)."""
+    found = []
+    try:
+        import psutil
+        pids = {p.pid for p in psutil.process_iter(["name"])
+                if (p.info["name"] or "").lower() == "spotify.exe"}
+    except Exception:  # noqa: BLE001
+        return None
+    if not pids:
+        return None
+    CB = ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, wintypes.LPARAM)
+
+    def cb(h, _l):
+        pid = wintypes.DWORD()
+        user32.GetWindowThreadProcessId(h, ctypes.byref(pid))
+        if pid.value in pids and user32.IsWindowVisible(h) and not user32.GetWindow(h, 4):
+            t = ctypes.create_unicode_buffer(8)
+            user32.GetWindowTextW(h, t, 8)
+            if t.value:
+                found.append(h)
+                return False
+        return True
+
+    user32.EnumWindows(CB(cb), 0)
+    return found[0] if found else None
+
+
+def open_spotify(uri=None, web_url=None):
+    """Spotify'ı öne getir (uri verilirse o sayfayı aç: sanatçı, albüm, arama, şarkı).
+    Açıksa penceresini geri yükler; kapalıysa / tepsideyse Spotify.exe'yi doğrudan başlatır.
+    (os.startfile('spotify:…') Spotify kapalıyken onu başlatmıyor ve pencereyi öne getirmiyor.)"""
+    h = _spotify_window()
+    if h:
+        if user32.IsIconic(h):
+            user32.ShowWindow(h, 9)  # SW_RESTORE
+        # odak kilidini aşmak için Alt'a kısa bas (Windows bunu önerilen yol olarak kabul eder)
+        user32.keybd_event(0x12, 0, 0, 0)
+        user32.keybd_event(0x12, 0, 2, 0)
+        user32.SetForegroundWindow(h)
+        if not uri:
+            return
+    exe = _spotify_exe()
+    try:
+        if exe:
+            import subprocess
+            # çalışıyorsa mevcut pencereye iletir, değilse başlatır
+            args = [exe] + ([f"--protocol-uri={uri}"] if uri else [])
+            subprocess.Popen(args, close_fds=True)
+        else:  # Microsoft Store sürümü
+            os.startfile(uri or "shell:AppsFolder\\SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify")
+    except OSError:
+        webbrowser.open(web_url or "https://open.spotify.com")
+
+
 def set_window_styles(hwnd):
     ex = user32.GetWindowLongPtrW(hwnd, GWL_EXSTYLE)
     ex = (ex | WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE) & ~WS_EX_APPWINDOW
@@ -802,7 +892,9 @@ HOTKEYS = (  # (kimlik, değiştirici, tuş, eylem, tuş adı, metin anahtarı)
     (4, MOD_CONTROL | MOD_ALT, 0x26, "vol+", "Ctrl+Alt+↑", "hk_volup"),
     (5, MOD_CONTROL | MOD_ALT, 0x28, "vol-", "Ctrl+Alt+↓", "hk_voldown"),
     (6, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, 0x53, "search", "Ctrl+Alt+S", "hk_search"),
+    (7, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, 0x4C, "like", "Ctrl+Alt+L", "hk_like"),
 )
+IC_HEART, IC_HEART_O = "", ""
 
 
 class Hotkeys:
@@ -2144,19 +2236,14 @@ class App:
         query = st["artist"] if kind == "artist" else f'{st["album"]} {st["artist"]}'
         if not uri:  # hesap bağlı değilse: Spotify içinde arama
             uri = "spotify:search:" + urllib.parse.quote(query.strip())
-        try:
-            os.startfile(uri)
-        except OSError:
-            webbrowser.open("https://open.spotify.com/search/" + urllib.parse.quote(query))
+        open_spotify(uri, "https://open.spotify.com/search/" + urllib.parse.quote(query))
 
     @staticmethod
     def _spotify_search(q):
         if not q:
             return
-        try:
-            os.startfile("spotify:search:" + urllib.parse.quote(q))
-        except OSError:
-            webbrowser.open("https://open.spotify.com/search/" + urllib.parse.quote(q))
+        open_spotify("spotify:search:" + urllib.parse.quote(q),
+                     "https://open.spotify.com/search/" + urllib.parse.quote(q))
 
     def _win_pos(self):
         r = wintypes.RECT()
@@ -2320,7 +2407,12 @@ class App:
             if st.get("art_changed") and st.get("title"):
                 if not (self.history and self.history[0].get("title") == st["title"]
                         and self.history[0].get("artist") == st["artist"]):
-                    self._stat_day()["plays"] += 1
+                    day = self._stat_day()
+                    day["plays"] += 1
+                    artist1 = (st.get("artist") or "").split(", ")[0].strip() or T("unknown")
+                    tkey = f'{st["title"]}\t{artist1}'
+                    cnt = day.setdefault("counts", {})
+                    cnt[tkey] = cnt.get(tkey, 0) + 1
                 self._add_history(st)
                 key = (st["title"], st["artist"])
                 if not self._seen_first:  # açılıştaki şarkı: bildirim yok
@@ -2342,6 +2434,9 @@ class App:
                 self._change_volume(-0.05)
             elif act == "search":
                 SearchDialog(self)
+                continue
+            elif act == "like":
+                self._like_hotkey()
                 continue
             else:
                 self._action(act)
@@ -2637,6 +2732,67 @@ class App:
         name, sec = max(d["tracks"].items(), key=lambda kv: kv[1])
         title, _s, artist = name.partition("\t")
         return title, artist, sec
+
+    # ---------------- dinleme geçmişinde arama
+    @staticmethod
+    def _norm(text):
+        """Aramada büyük/küçük harf ve aksan farkını yok say (İ/ı/ş/é…)."""
+        t = (text or "").replace("İ", "i").replace("I", "ı").lower().replace("ı", "i")
+        return "".join(c for c in unicodedata.normalize("NFKD", t)
+                       if not unicodedata.combining(c))
+
+    def _history_index(self):
+        """Şarkı ve sanatçı başına toplamlar (içe aktarılan + canlı). Birkaç dakikada bir yenilenir."""
+        ck = (self.import_ver, len(self.stats["days"]), int(time.time() // 300))
+        if getattr(self, "_hidx", (None,))[0] == ck:
+            return self._hidx[1]
+        tracks, artists = {}, {}
+
+        def bump(store, key, sec, plays, day):
+            e = store.get(key)
+            if e is None:
+                e = store[key] = {"sec": 0.0, "plays": 0, "days": 0, "first": day, "last": day,
+                                  "years": {}}
+            e["sec"] += sec
+            e["plays"] += plays
+            e["days"] += 1
+            e["first"] = min(e["first"], day)
+            e["last"] = max(e["last"], day)
+            y = day[:4]
+            e["years"][y] = e["years"].get(y, 0.0) + sec
+
+        for day in set(self.imported) | set(self.stats["days"]):
+            d = self._stat_get(day) or {}
+            counts = d.get("counts", {})
+            per_artist = {}
+            for tkey, sec in d.get("tracks", {}).items():
+                n = counts.get(tkey, 0)
+                bump(tracks, tkey, sec, n, day)
+                a = tkey.partition("\t")[2]
+                pa = per_artist.setdefault(a, [0.0, 0])
+                pa[0] += sec
+                pa[1] += n
+            for a, (sec, n) in per_artist.items():
+                bump(artists, a, sec, n, day)
+        for k, e in tracks.items():
+            e["norm"] = self._norm(k.replace("\t", " "))
+        for k, e in artists.items():
+            e["norm"] = self._norm(k)
+        self._hidx = (ck, (tracks, artists))
+        return tracks, artists
+
+    def history_search(self, query, limit=150):
+        """[(tür, anahtar, kayıt)] — önce eşleşen sanatçılar, sonra şarkılar (süreye göre)."""
+        tracks, artists = self._history_index()
+        words = self._norm(query).split()
+        if not words:
+            return []
+        def ok(e):
+            return all(w in e["norm"] for w in words)
+        arts = sorted(((k, e) for k, e in artists.items() if ok(e)), key=lambda kv: -kv[1]["sec"])
+        trs = sorted(((k, e) for k, e in tracks.items() if ok(e)), key=lambda kv: -kv[1]["sec"])
+        return ([("artist", k, e) for k, e in arts[:8]] +
+                [("track", k, e) for k, e in trs[:limit]])
 
     def _year_data(self, year):
         y = str(year)
@@ -3105,6 +3261,28 @@ class App:
             self.cfg["x"], self.cfg["y"] = x, ny
             self.cfg.save()
 
+    def _like_hotkey(self):
+        """Ctrl+Alt+L: çalan şarkıyı beğen / beğeniyi kaldır ve kısa bir kalp göstergesi göster
+        (oyundayken de)."""
+        st, web = self.st, self.web
+        if not st.get("ok"):
+            return
+        if not (web.connected and web.has_library):
+            ConnectDialog(self, reauth=web.connected)
+            return
+        fs = fullscreen_app((self.hwnd, self.toast.hwnd))
+        title = st.get("title") or ""
+        if not web.toggle_like(title):  # Spotify'dan şarkı kimliği henüz gelmedi
+            web.refresh_now()
+            self.toast.show_message(IC_HEART_O, T("like_wait"), fs, hold=1400)
+            return
+        self.base_key = None
+        liked = web.liked_state(title)
+        if not self.inside:
+            self.toast.show_message(IC_HEART if liked else IC_HEART_O,
+                                    (T("osd_liked") if liked else T("osd_unliked"))
+                                    + (f" · {title}" if title else ""), fs, hold=1300)
+
     def _hotkey_osd(self, act):
         """Kısayolla yapılan işlemi ekranda kısaca göster (widget görünmüyorsa: tam ekran
         uygulama ya da önde başka bir pencere varken)."""
@@ -3200,10 +3378,7 @@ class App:
             self._alarm_day = now.tm_yday
             log("alarm:", al.get("time"))
             if not st.get("ok"):
-                try:
-                    os.startfile("spotify:")
-                except OSError:
-                    pass
+                open_spotify()
             self._alarm_fade = {"t0": None, "target": None, "deadline": time.monotonic() + 90}
             self.toast.show_message(IC_ALARM, T("al_fired"), fullscreen_app(
                 (self.hwnd, self.toast.hwnd)))
@@ -3709,6 +3884,14 @@ class App:
             d.text((X(x + w / 2), X(cy)), lbl, font=F["qsub"], fill=P["on_primary"] + (255,),
                    anchor="mm")
             hits.append(("sup", x, cy - 14, x + w, cy + 14))
+        else:  # geçmişte arama düğmesi
+            bx = W - 30
+            if hov == "shist":
+                rr(img, X(bx - 14), X(cy - 14), X(bx + 14), X(cy + 14), 0, P["on_surface"],
+                   alpha=22, ellipse=True)
+            d.text((X(bx), X(cy)), "", font=self.icon_font(13),
+                   fill=P["on_surface_variant"] + (255,), anchor="mm")
+            hits.append(("shist", bx - 15, cy - 15, bx + 15, cy + 15))
 
         # özet kutuları (bir yıl açıkken üçüncü kutu yıllık özet kartını açar)
         gap, x0, ty = 8, 16, top + 34
@@ -4087,10 +4270,7 @@ class App:
             nxt = {0: 2, 2: 1, 1: 0}.get(st.get("repeat") or 0, 0)  # kapalı → liste → şarkı
             self.media.command("repeat", nxt)
         elif a == "art":
-            try:
-                os.startfile("spotify:")
-            except OSError:
-                webbrowser.open("https://open.spotify.com")
+            open_spotify()
         elif a in ("artist", "album"):
             self._open_entity(a)
         elif a == "like":
@@ -4109,6 +4289,8 @@ class App:
             ConnectDialog(self)
         elif a.startswith("sp_"):
             self._set("stats_period", a[3:])
+        elif a == "shist":
+            HistoryDialog(self)
         elif a == "swrap":
             RecapWindow(self, int(self.cfg["stats_period"][1:]))
         elif a == "sup":  # açılmış aydan yıla, yıldan tümüne
@@ -4129,10 +4311,7 @@ class App:
             else:
                 q = " ".join(sm["top_t"][i][:2]) if i < len(sm["top_t"]) else ""
             if q:
-                try:
-                    os.startfile("spotify:search:" + urllib.parse.quote(q))
-                except OSError:
-                    webbrowser.open("https://open.spotify.com/search/" + urllib.parse.quote(q))
+                self._spotify_search(q)
         elif a.startswith("h"):  # son çalınan: Spotify'da ara
             items = self._recent_rows(int(self.cfg["queue_rows"]))
             i = int(a[1:])
@@ -4691,6 +4870,8 @@ class MenuPanel:
                 {"t": "sep"},
                 {"t": "nav", "id": "p_dev", "icon": MI["device"], "label": T("m_devices"),
                  "value": "", "page": "devices"},
+                {"t": "action", "id": "a_hist", "icon": "", "label": T("hs_menu"),
+                 "do": self._then_close(lambda: HistoryDialog(app))},
                 {"t": "nav", "id": "p_acc", "icon": MI["account"], "label": T("mn_account"),
                  "value": T("acc_on") if app.web.connected else T("acc_off"), "page": "account"},
                 {"t": "nav", "id": "p_lang", "icon": MI["lang"], "label": T("mn_language"),
@@ -5252,10 +5433,7 @@ class SearchDialog(_Dialog):
         web = self.app.web
         if not web.has_control:
             if what == "play":  # izin yoksa: Spotify uygulamasında aç
-                try:
-                    os.startfile(uri)
-                except OSError:
-                    pass
+                open_spotify(uri)
             self.status.config(text=T("need_scope"))
             if not getattr(self, "_reauth_btn", None):
                 self._reauth_btn = self.btn(
@@ -5284,10 +5462,7 @@ class SearchDialog(_Dialog):
             if code is None:
                 self.status.config(text=T("s_queued") if what == "queue" else "▶")
             elif code in (403, 404):  # Premium yok ya da etkin cihaz yok
-                try:
-                    os.startfile(uri)
-                except OSError:
-                    pass
+                open_spotify(uri)
                 self.status.config(text=T("s_premium"))
             else:
                 self.status.config(text=T("err_http", code=code))
@@ -5379,6 +5554,143 @@ class RecapWindow(_Dialog):
         if p:
             self.img.save(p)
             self.status.config(text="✓ " + os.path.basename(p))
+
+
+class HistoryDialog(_Dialog):
+    """Dinleme geçmişinde (içe aktarılan + canlı) şarkı / sanatçı arama."""
+
+    def __init__(self, app, query=""):
+        if not self._setup(app, T("hs_title")):
+            return
+        from tkinter import ttk
+        t = self.top
+        tk.Label(t, text=T("hs_title"), bg=self.bg, fg=self.fg,
+                 font=("Segoe UI Semibold", 15)).pack(anchor="w")
+        tk.Label(t, text=T("hs_hint"), bg=self.bg, fg=self.dim,
+                 font=("Segoe UI", 9)).pack(anchor="w", pady=(2, 8))
+        self.entry = tk.Entry(t, bg=self.field, fg=self.fg, insertbackground=self.fg,
+                              relief="flat", font=("Segoe UI", 12), width=60)
+        self.entry.pack(fill="x", ipady=7, ipadx=8)
+        self.entry.bind("<KeyRelease>", lambda _e: self._schedule())
+        self.entry.bind("<Return>", lambda _e: self._run())
+
+        st = ttk.Style(t)
+        st.theme_use("clam")
+        st.configure("H.Treeview", background=self.bg, fieldbackground=self.bg,
+                     foreground=self.fg, rowheight=26, borderwidth=0, font=("Segoe UI", 10))
+        st.configure("H.Treeview.Heading", background=self.field, foreground=self.dim,
+                     relief="flat", font=("Segoe UI Semibold", 9))
+        st.map("H.Treeview", background=[("selected", self.acc)],
+               foreground=[("selected", self.on_acc)])
+        st.map("H.Treeview.Heading", background=[("active", self.field)])
+        cols = ("time", "plays", "days", "first", "last")
+        frame = tk.Frame(t, bg=self.bg)
+        frame.pack(fill="both", expand=True, pady=(10, 0))
+        self.tree = ttk.Treeview(frame, columns=cols, style="H.Treeview", height=14,
+                                 selectmode="browse")
+        self.tree.heading("#0", text=f'{T("hs_song")} / {T("hs_artist")}', anchor="w")
+        self.tree.column("#0", width=330, anchor="w")
+        for c, key, w in zip(cols, ("hs_time", "hs_plays", "hs_days", "hs_first", "hs_last"),
+                             (90, 64, 50, 104, 104)):
+            self.tree.heading(c, text=T(key), anchor="e" if c in ("time", "plays", "days")
+                              else "center")
+            self.tree.column(c, width=w, anchor="e" if c in ("time", "plays", "days")
+                             else "center", stretch=False)
+        sb = ttk.Scrollbar(frame, orient="vertical", command=self.tree.yview)
+        self.tree.configure(yscrollcommand=sb.set)
+        self.tree.pack(side="left", fill="both", expand=True)
+        sb.pack(side="right", fill="y")
+        self.tree.tag_configure("artist", foreground=self.acc,
+                                font=("Segoe UI Semibold", 10))
+        self.tree.bind("<<TreeviewSelect>>", lambda _e: self._detail())
+        self.tree.bind("<Double-1>", lambda _e: self._open())
+
+        bottom = tk.Frame(t, bg=self.bg)
+        bottom.pack(fill="x", pady=(10, 0))
+        self.detail = tk.Label(bottom, text="", bg=self.bg, fg=self.fg, justify="left",
+                               anchor="w", font=("Segoe UI", 10))
+        self.detail.pack(side="left", fill="x", expand=True)
+        self.chart = tk.Canvas(bottom, width=200, height=58, bg=self.bg,
+                               highlightthickness=0)
+        self.chart.pack(side="right")
+        self.status = tk.Label(t, text="", bg=self.bg, fg=self.dim, font=("Segoe UI", 9))
+        self.status.pack(anchor="w", pady=(6, 0))
+        row = tk.Frame(t, bg=self.bg)
+        row.pack(fill="x", pady=(6, 0))
+        self.btn(row, T("hs_open"), self._open, primary=True).pack(side="right")
+        self.btn(row, T("dlg_close"), self.close).pack(side="right", padx=8)
+        self._job = None
+        self._rows = {}
+        if not app.imported and not app.stats["days"]:
+            self.status.config(text=T("hs_empty"))
+        if query:
+            self.entry.insert(0, query)
+            self._run()
+        t.focus_force()
+        self.entry.focus_set()
+
+    def _schedule(self):
+        if self._job is not None:
+            self.top.after_cancel(self._job)
+        self._job = self.top.after(220, self._run)
+
+    def _run(self):
+        self._job = None
+        q = self.entry.get().strip()
+        self.tree.delete(*self.tree.get_children())
+        self._rows.clear()
+        if not q:
+            self.status.config(text="")
+            return
+        res = self.app.history_search(q)
+        self.status.config(text=T("hs_count", n=len(res)) if res else T("hs_none"))
+        for kind, key, e in res:
+            if kind == "artist":
+                label = "♪  " + key
+            else:
+                title, _s, artist = key.partition("\t")
+                label = f"{title}  ·  {artist}"
+            iid = self.tree.insert("", "end", text=label, tags=(kind,), values=(
+                fmt_dur(e["sec"]), f'{e["plays"]:,}'.replace(",", "."), e["days"],
+                e["first"], e["last"]))
+            self._rows[iid] = (kind, key, e)
+        kids = self.tree.get_children()
+        if kids:
+            self.tree.selection_set(kids[0])
+
+    def _detail(self):
+        sel = self.tree.selection()
+        if not sel or sel[0] not in self._rows:
+            return
+        kind, key, e = self._rows[sel[0]]
+        name = key if kind == "artist" else key.replace("\t", " · ")
+        best = max(e["years"].items(), key=lambda kv: kv[1])[0] if e["years"] else "–"
+        self.detail.config(text=T("hs_detail", name=name, dur=fmt_dur(e["sec"]),
+                                  plays=f'{e["plays"]:,}'.replace(",", "."), days=e["days"],
+                                  first=e["first"], last=e["last"], year=best))
+        # yıllara göre küçük çubuk grafik
+        c = self.chart
+        c.delete("all")
+        ys = sorted(e["years"])
+        if not ys:
+            return
+        allys = [str(y) for y in range(int(ys[0]), int(ys[-1]) + 1)]
+        mx = max(e["years"].values()) or 1
+        bw = min(26, 196 / len(allys))
+        for i, y in enumerate(allys):
+            v = e["years"].get(y, 0)
+            h = 40 * v / mx
+            x0 = 2 + i * bw
+            c.create_rectangle(x0 + 2, 44 - h, x0 + bw - 2, 44, fill=self.acc, width=0)
+            c.create_text(x0 + bw / 2, 52, text="'" + y[2:], fill=self.dim,
+                          font=("Segoe UI", 7))
+
+    def _open(self):
+        sel = self.tree.selection()
+        if not sel or sel[0] not in self._rows:
+            return
+        kind, key, _e = self._rows[sel[0]]
+        self.app._spotify_search(key if kind == "artist" else key.replace("\t", " "))
 
 
 if __name__ == "__main__":
