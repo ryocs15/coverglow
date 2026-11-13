@@ -5352,7 +5352,7 @@ class MenuPanel:
                                fill=var, anchor="rm")
                         right += F["value"].getlength(it["value"]) / S + 8
                 elif t == "toggle":
-                    self._switch(content, PW - 54, y + h / 2, it["on"], dis, P)
+                    self._switch(content, PW - 54, y + h / 2, it["on"], dis, P, S)
                     right = 64
                 elif t == "radio":
                     if it["on"]:
@@ -5472,8 +5472,9 @@ class MenuPanel:
         self.surface.full(canvas)
         self._place(vh, place)
 
-    def _switch(self, img, x, cy, on, dis, P):
-        X = lambda v: v * self.S  # noqa: E731
+    @staticmethod
+    def _switch(img, x, cy, on, dis, P, S):
+        X = lambda v: v * S  # noqa: E731
         w, h = 40, 24
         if on:
             rr(img, X(x), X(cy - h / 2), X(x + w), X(cy + h / 2), X(h / 2),
@@ -5625,7 +5626,8 @@ class PillButton(tk.Label):
     durumlarıyla. kind: filled (birincil), tonal, text, outline."""
 
     def __init__(self, dlg, parent, text, cmd, kind="tonal", small=False):
-        super().__init__(parent, bg=dlg.bg, bd=0, cursor="hand2", highlightthickness=0)
+        super().__init__(parent, bg=dlg.bg, bd=0, cursor="hand2", highlightthickness=0,
+                         takefocus=1)
         self.dlg, self.cmd = dlg, cmd
         P, dpi = dlg.P, dlg.app.dpi
         shad = STYLE["shad"]
@@ -5660,10 +5662,16 @@ class PillButton(tk.Label):
         self.bind("<Leave>", lambda _e: self.config(image=self._imgs[0]))
         self.bind("<ButtonPress-1>", lambda _e: self.config(image=self._imgs[2]))
         self.bind("<ButtonRelease-1>", self._release)
+        # klavye: Tab ile gelinir (vurgulu görünür), Boşluk / Enter basar
+        self.bind("<FocusIn>", lambda _e: self.config(image=self._imgs[1]))
+        self.bind("<FocusOut>", lambda _e: self.config(image=self._imgs[0]))
+        for key in ("<space>", "<Return>"):
+            self.bind(key, lambda _e: self.cmd and self.cmd())
 
     def _release(self, e):
-        self.config(image=self._imgs[1])
-        if 0 <= e.x <= self.winfo_width() and 0 <= e.y <= self.winfo_height() and self.cmd:
+        inside = 0 <= e.x <= self.winfo_width() and 0 <= e.y <= self.winfo_height()
+        self.config(image=self._imgs[1 if inside else 0])
+        if inside and self.cmd:
             self.cmd()
 
 
@@ -5754,7 +5762,7 @@ class _Dialog:
         imgs = {}
         for on in (False, True):
             img = Image.new("RGBA", (round(46 * S), round(28 * S)), (0, 0, 0, 0))
-            MenuPanel._switch(type("S", (), {"S": S})(), img, 3, 14, on, False, self.P)
+            MenuPanel._switch(img, 3, 14, on, False, self.P, S)
             imgs[on] = ImageTk.PhotoImage(img)
         state = {"on": bool(value)}
         sw = tk.Label(row, image=imgs[state["on"]], bg=self.bg, bd=0)
@@ -5810,6 +5818,7 @@ class ConnectDialog(_Dialog):
         holder.pack(anchor="w", pady=(0, 16))
         if app.cfg.get("client_id"):
             self.entry_w.insert(0, app.cfg["client_id"])
+        self.entry_w.bind("<Return>", lambda _e: self._connect())
         bottom = tk.Frame(t, bg=self.bg)
         bottom.pack(fill="x")
         self.status = tk.Label(bottom, text="", bg=self.bg, fg=self.dim, font=self.font(9),
@@ -6013,7 +6022,8 @@ class AlarmDialog(_Dialog):
             state["v"] = (state["v"] + d) % mod
             lbl.config(text=f"{state['v']:02d}")
 
-        lbl.bind("<MouseWheel>", lambda e: step(1 if e.delta > 0 else -1))
+        for w_ in (box, up, lbl, down):  # tekerlek kutunun her yerinde çalışsın
+            w_.bind("<MouseWheel>", lambda e: step(1 if e.delta > 0 else -1))
         up.pack()
         lbl.pack(pady=2)
         down.pack()
@@ -6135,7 +6145,7 @@ class SongDialog(_Dialog):
 
     def _link(self, parent, text, cmd, size=10, dim=False):
         lbl = tk.Label(parent, text=text, bg=self.bg, fg=self.dim if dim else self.fg,
-                       cursor="hand2", font=("Segoe UI", size), justify="left",
+                       cursor="hand2", font=self.font(size), justify="left",
                        wraplength=round(330 * self.app.dpi))
         lbl.bind("<Button-1>", lambda _e: cmd())
         lbl.bind("<Enter>", lambda _e: lbl.config(fg=self.acc))
