@@ -2526,10 +2526,19 @@ class App:
         h = m["oh"] + (m["nh"] - m["oh"]) * e
         top = H - h if m["bottom"] else 0.0
         frame = Image.blend(m["old"], m["new"], e)
+        # kesim maskesi: düz dikdörtgen + önbellekteki 4 köşe (her karede yeniden çizmek ~5 ms)
+        r = round(m["r0"] + (m["r1"] - m["r0"]) * e)
+        it, ib = int(round(top)), int(round(top + h))
+        r = max(1, min(r, (ib - it) // 2, w // 2))
+        cache = self.__dict__.setdefault("_corners", {})
+        c = cache.get(r)
+        if c is None:
+            c = cache[r] = _rr_mask(2 * r, 2 * r, 0, 0, 2 * r, 2 * r, r)
         mask = Image.new("L", frame.size, 0)
-        r = m["r0"] + (m["r1"] - m["r0"]) * e
-        it, ib = int(top), int(math.ceil(top + h))
-        mask.paste(_rr_mask(w, ib - it, 0, top - it, w, top + h - it, r), (0, it))
+        mask.paste(255, (0, it, w, ib))
+        for cx, cy in ((0, 0), (r, 0), (0, r), (r, r)):
+            mask.paste(c.crop((cx, cy, cx + r, cy + r)),
+                       (cx if cx == 0 else w - r, it if cy == 0 else ib - r))
         from PIL import ImageChops
         frame.putalpha(ImageChops.multiply(frame.getchannel("A"), mask))
         self.surface.full(frame, H + 2)
@@ -2544,9 +2553,9 @@ class App:
             move_window(self.hwnd, *mv)
             self.cfg["x"], self.cfg["y"] = mv
             self.cfg.save()
-        if m:
-            self.base_key = None
-            self._render_all()
+        if m:  # son kare hazır: baştan çizmeden bas (yeniden çizim ~20 ms takılma yapıyordu)
+            self.surface.full(self._frame, round(self.content_h * self.S) + 4)
+            self.strip_key = None
 
     def _on_double(self, e):
         x, y = self._xy(e)
@@ -3498,6 +3507,8 @@ class App:
             self._keep_on_screen()
             self.base_strip = self.base.crop((0, self.sy0, self.WP, self.sy0 + self.sh))
             full = True
+        if self._morph and not full:  # geçiş sürerken kareleri _morph_step basıyor
+            return
         pos, end = self._position()
         if self.drag_seek is not None:
             frac = self.drag_seek
