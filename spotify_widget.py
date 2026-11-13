@@ -633,9 +633,10 @@ class LayeredSurface:
         r, g, b, a = img.convert("RGBa").split()  # ön-çarpımlı alfa
         return Image.merge("RGBA", (b, g, r, a)).tobytes()
 
-    def full(self, img, h=None):
+    def full(self, img, h=None, pos=None):
         """Tüm pencereyi güncelle. h verilirse sadece üstteki h satır dönüştürülür (içerik
-        küçükken, ör. mini mod, tüm pencereyi işlememek için); altı şeffaf temizlenir."""
+        küçükken, ör. mini mod, tüm pencereyi işlememek için); altı şeffaf temizlenir.
+        pos verilirse pencere aynı çağrıda oraya taşınır (taşıma + çizim aynı karede)."""
         h = self.h if h is None else max(1, min(self.h, h))
         data = self.to_bgra(img if h == self.h else img.crop((0, 0, self.w, h)))
         ctypes.memmove(self.bits, data, len(data))
@@ -643,7 +644,7 @@ class LayeredSurface:
         if prev > h:  # önceki daha uzun içerikten kalan satırları sil
             ctypes.memset(self.bits.value + h * self.w * 4, 0, (prev - h) * self.w * 4)
         self._used_h = h
-        self._commit(None)
+        self._commit(None, pos)
 
     def region(self, img, x, y):
         data = self.to_bgra(img)
@@ -653,14 +654,14 @@ class LayeredSurface:
             ctypes.memmove(base + ((y + r) * self.w + x) * 4, data[r * rw:(r + 1) * rw], rw)
         self._commit(wintypes.RECT(x, y, x + img.width, y + img.height))
 
-    def _commit(self, rect):
+    def _commit(self, rect, pos=None):
         size = wintypes.SIZE(self.w, self.h)
         src = wintypes.POINT(0, 0)
         blend = BLENDFUNCTION(0, 0, self.alpha, 1)
         info = ULWINFO()
         info.cbSize = ctypes.sizeof(ULWINFO)
         info.hdcDst = self.screen_dc
-        info.pptDst = None
+        info.pptDst = ctypes.pointer(wintypes.POINT(*pos)) if pos else None
         info.psize = ctypes.pointer(size)
         info.hdcSrc = self.mem_dc
         info.pptSrc = ctypes.pointer(src)
@@ -2064,6 +2065,11 @@ class App:
         self.cfg.setdefault("fps", 60)
         self.cfg.setdefault("ui", "material")   # tasarım dili: material / shadcn
         self.cfg.setdefault("memory", True)     # günlük "geçen yıl bugün" hatırlatması
+        self.cfg.setdefault("startup", True)    # Windows açılışında başlat (varsayılan açık)
+        if FROZEN and self.cfg["startup"]:
+            # sadece exe: kaydı her açılışta yenile (exe taşındıysa yeni yolu yazar).
+            # Geliştirme / test kopyaları kullanıcının başlangıç kaydına dokunmasın.
+            self._set_startup(True)
         self._start_t = time.monotonic()
         self.cfg.setdefault("react", True)
         self.cfg.setdefault("duck", True)
@@ -2541,21 +2547,25 @@ class App:
                        (cx if cx == 0 else w - r, it if cy == 0 else ib - r))
         from PIL import ImageChops
         frame.putalpha(ImageChops.multiply(frame.getchannel("A"), mask))
-        self.surface.full(frame, H + 2)
+        # büyürken pencere ilk karede (çizimle birlikte) yeni yerine geçer
+        self.surface.full(frame, H + 2, self._take_move() if m["nh"] > m["oh"] else None)
         if t >= 1.0:
             self._finish_morph()
 
-    def _finish_morph(self):
-        m, self._morph = self._morph, None
-        mv = self._anchor.get("deferred")
-        if mv:  # küçülürken pencereyi en sonda yeni yerine taşı
-            self._anchor["deferred"] = None
-            move_window(self.hwnd, *mv)
+    def _take_move(self):
+        mv, self._anchor["deferred"] = self._anchor.get("deferred"), None
+        if mv:
             self.cfg["x"], self.cfg["y"] = mv
             self.cfg.save()
-        if m:  # son kare hazır: baştan çizmeden bas (yeniden çizim ~20 ms takılma yapıyordu)
-            self.surface.full(self._frame, round(self.content_h * self.S) + 4)
+        return mv
+
+    def _finish_morph(self):
+        m, self._morph = self._morph, None
+        if m:  # son kare hazır: baştan çizmeden bas; küçülürken pencere de şimdi taşınır
+            self.surface.full(self._frame, round(self.content_h * self.S) + 4, self._take_move())
             self.strip_key = None
+        elif self._anchor.get("deferred"):
+            move_window(self.hwnd, *self._take_move())
 
     def _on_double(self, e):
         x, y = self._xy(e)
@@ -3560,8 +3570,9 @@ class App:
         ny = max(wa.top, min(ny, wa.bottom - new_h))
         self._anchor = {"bottom": bottom, "deferred": None}
         if ny != y:
-            if self._morph == "pending" and new_h < old_h:
-                # küçülme animasyonu eski yerde oynasın; pencere sonra taşınır
+            if self._morph == "pending":
+                # geçişte pencere ayrı taşınmasın: büyürken ilk karede, küçülürken son karede
+                # çizimle aynı anda taşınır (yoksa eski görüntü bir an yanlış yerde görünür)
                 self._anchor["deferred"] = (x, ny)
                 return
             move_window(self.hwnd, x, ny)
@@ -4766,26 +4777,41 @@ class App:
         else:
             self.hotkeys.stop()
 
-    @staticmethod
-    def _startup_on():
-        return os.path.exists(STARTUP_VBS)
+    RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
+
+    @classmethod
+    def _startup_on(cls):
+        try:
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, cls.RUN_KEY) as k:
+                winreg.QueryValueEx(k, "SpotifyWidget")
+            return True
+        except OSError:
+            return os.path.exists(STARTUP_VBS)  # eski sürümün başlangıç dosyası
 
     def _set_startup(self, on):
+        """Windows açılışında başlat: HKCU\\...\\Run kaydı (Görev Yöneticisi > Başlangıç'ta görünür)."""
+        self.cfg["startup"] = bool(on)
+        self.cfg.save()
         try:
-            if on:
-                if FROZEN:
-                    cmd = f'"""{sys.executable}"""'
+            if os.path.exists(STARTUP_VBS):
+                os.remove(STARTUP_VBS)  # eski VBS yöntemini temizle
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, self.RUN_KEY, 0,
+                                winreg.KEY_SET_VALUE) as k:
+                if on:
+                    if FROZEN:
+                        cmd = f'"{sys.executable}"'
+                    else:
+                        pyw = os.path.join(os.path.dirname(sys.executable), "pythonw.exe")
+                        cmd = f'"{pyw if os.path.exists(pyw) else sys.executable}" ' \
+                              f'"{os.path.abspath(__file__)}"'
+                    winreg.SetValueEx(k, "SpotifyWidget", 0, winreg.REG_SZ, cmd)
                 else:
-                    pyw = os.path.join(os.path.dirname(sys.executable), "pythonw.exe")
-                    if not os.path.exists(pyw):
-                        pyw = sys.executable
-                    cmd = f'"""{pyw}"" ""{os.path.abspath(__file__)}"""'
-                with open(STARTUP_VBS, "w", encoding="utf-8") as f:
-                    f.write(f'CreateObject("WScript.Shell").Run {cmd}, 0, False\n')
-            elif os.path.exists(STARTUP_VBS):
-                os.remove(STARTUP_VBS)
-        except Exception as e:  # noqa: BLE001
-            log("başlangıç ayarı:", e)
+                    try:
+                        winreg.DeleteValue(k, "SpotifyWidget")
+                    except FileNotFoundError:
+                        pass
+        except OSError as e:
+            log("başlangıç ayarı:", repr(e))
 
     def run(self):
         self.root.mainloop()
