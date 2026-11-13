@@ -4899,103 +4899,6 @@ class Toast:
 
 
 # ------------------------------------------------------------------ bağlantı penceresi
-class ConnectDialog:
-    _open = None
-
-    def __init__(self, app, reauth=False):
-        if ConnectDialog._open is not None:
-            try:
-                ConnectDialog._open.lift()
-                return
-            except tk.TclError:
-                pass
-        self.app = app
-        light = app.light
-        bg = "#F7F5FA" if light else "#1C1B1F"
-        fg = "#1C1B1F" if light else "#E6E1E5"
-        dim = "#49454F" if light else "#CAC4D0"
-        acc = "#%02x%02x%02x" % app.pal["primary"]
-        on_acc = "#%02x%02x%02x" % app.pal["on_primary"]
-        field = "#E7E0EC" if light else "#2B2930"
-
-        t = self.top = tk.Toplevel(app.root)
-        ConnectDialog._open = t
-        t.title(T("dlg_title"))
-        t.configure(bg=bg, padx=24, pady=20)
-        t.resizable(False, False)
-        t.attributes("-topmost", True)
-        t.protocol("WM_DELETE_WINDOW", self._close)
-
-        tk.Label(t, text=T("dlg_head"), bg=bg, fg=fg,
-                 font=("Segoe UI Semibold", 15)).pack(anchor="w")
-        if reauth:
-            tk.Label(t, text=T("dlg_reauth"), bg=bg, fg=acc, justify="left", wraplength=460,
-                     font=("Segoe UI Semibold", 10)).pack(anchor="w", pady=(6, 0))
-        tk.Label(t, text=T("dlg_steps", uri=REDIRECT_URI), bg=bg, fg=dim, justify="left",
-                 font=("Segoe UI", 10)).pack(anchor="w", pady=(8, 12))
-
-        row = tk.Frame(t, bg=bg)
-        row.pack(anchor="w", pady=(0, 14))
-        self._btn(row, T("dlg_dev"), field, fg,
-                  lambda: webbrowser.open("https://developer.spotify.com/dashboard")
-                  ).pack(side="left")
-        self._btn(row, T("dlg_copy"), field, fg, self._copy).pack(side="left", padx=8)
-
-        tk.Label(t, text="Client ID", bg=bg, fg=dim, font=("Segoe UI", 9)).pack(anchor="w")
-        self.entry = tk.Entry(t, bg=field, fg=fg, insertbackground=fg, relief="flat",
-                              font=("Consolas", 11), width=40)
-        self.entry.pack(anchor="w", ipady=6, ipadx=6, pady=(2, 14), fill="x")
-        if app.cfg.get("client_id"):
-            self.entry.insert(0, app.cfg["client_id"])
-
-        bottom = tk.Frame(t, bg=bg)
-        bottom.pack(fill="x")
-        self.status = tk.Label(bottom, text="", bg=bg, fg=dim, font=("Segoe UI", 9),
-                               wraplength=300, justify="left")
-        self.status.pack(side="left")
-        self._btn(bottom, T("dlg_connect"), acc, on_acc, self._connect,
-                  bold=True).pack(side="right")
-        self._btn(bottom, T("dlg_close"), bg, fg, self._close).pack(side="right", padx=8)
-        t.focus_force()
-        self.entry.focus_set()
-
-    @staticmethod
-    def _btn(parent, text, bg, fg, cmd, bold=False):
-        return tk.Button(parent, text=text, bg=bg, fg=fg, activebackground=bg,
-                         activeforeground=fg, relief="flat", bd=0, padx=16, pady=7,
-                         cursor="hand2", command=cmd,
-                         font=("Segoe UI Semibold" if bold else "Segoe UI", 10))
-
-    def _copy(self):
-        self.top.clipboard_clear()
-        self.top.clipboard_append(REDIRECT_URI)
-        self.status.config(text=T("dlg_copied"))
-
-    def _connect(self):
-        cid = self.entry.get().strip()
-        if len(cid) < 16:
-            self.status.config(text=T("dlg_invalid"))
-            return
-        self.app.web.auth_status = None
-        self.app.web.start_auth(cid)
-        self._poll()
-
-    def _poll(self):
-        s = self.app.web.auth_status
-        if s == "ok":
-            self.status.config(text=T("dlg_ok"))
-            self.top.after(900, self._close)
-            return
-        self.status.config(text=s or "")
-        if self.app.web.auth_error:
-            return
-        self.top.after(300, self._poll)
-
-    def _close(self):
-        ConnectDialog._open = None
-        self.top.destroy()
-
-
 # ------------------------------------------------------------------ sağ tık menüsü
 MI_BACK, MI_CHEV, MI_CHECK = "", "", ""
 MI = {"search": "", "mini": "", "lock": "", "share": "",
@@ -5674,8 +5577,98 @@ def copy_image_to_clipboard(img):
         user32.CloseClipboard()
 
 
+def _hx(c):
+    return "#%02x%02x%02x" % tuple(c[:3])
+
+
+_PRIVATE_FONTS = set()
+
+
+def load_private_fonts():
+    """Uygulamayla gelen yazı tiplerini (Geist) sadece bu süreç için Windows'a tanıt:
+    böylece tk pencereleri de kullanabilir."""
+    try:
+        for f in os.listdir(BUNDLED_FONTS):
+            if f.lower().endswith(".ttf") and f not in _PRIVATE_FONTS:
+                if ctypes.windll.gdi32.AddFontResourceExW(os.path.join(BUNDLED_FONTS, f),
+                                                          0x10, 0):  # FR_PRIVATE
+                    _PRIVATE_FONTS.add(f)
+    except OSError:
+        pass
+
+
+def style_titlebar(win, bg, fg, dark):
+    """Windows 11: başlık çubuğunu ve kenarlığı pencere rengine boya, köşeleri yuvarla."""
+    try:
+        win.update_idletasks()
+        hwnd = user32.GetAncestor(win.winfo_id(), 2)
+        dwm = ctypes.windll.dwmapi
+
+        def setv(attr, val):
+            v = ctypes.c_int(val)
+            dwm.DwmSetWindowAttribute(hwnd, attr, ctypes.byref(v), ctypes.sizeof(v))
+
+        def cref(c):
+            return c[0] | (c[1] << 8) | (c[2] << 16)
+
+        setv(20, 1 if dark else 0)      # DWMWA_USE_IMMERSIVE_DARK_MODE
+        setv(33, 2)                      # DWMWA_WINDOW_CORNER_PREFERENCE: yuvarlak
+        setv(35, cref(bg))               # DWMWA_CAPTION_COLOR
+        setv(36, cref(fg))               # DWMWA_TEXT_COLOR
+        setv(34, cref(bg))               # DWMWA_BORDER_COLOR
+    except Exception:  # noqa: BLE001  (Windows 10'da bu ayarların bir kısmı yok)
+        pass
+
+
+class PillButton(tk.Label):
+    """Material You / shadcn düğmesi: PIL ile çizilmiş yuvarlak zemin + metin, hover / basılı
+    durumlarıyla. kind: filled (birincil), tonal, text, outline."""
+
+    def __init__(self, dlg, parent, text, cmd, kind="tonal", small=False):
+        super().__init__(parent, bg=dlg.bg, bd=0, cursor="hand2", highlightthickness=0)
+        self.dlg, self.cmd = dlg, cmd
+        P, dpi = dlg.P, dlg.app.dpi
+        shad = STYLE["shad"]
+        if shad and kind == "tonal":
+            kind = "outline"   # shadcn 'outline' düğme
+        fill, fg, border = {
+            "filled": (P["primary"], P["on_primary"], None),
+            "tonal": (P["secondary_container"], P["on_secondary_container"], None),
+            "outline": (dlg.Pbg, P["on_surface"], P.get("border", P["outline"])),
+            "text": (None, P["primary"], None),
+        }[kind]
+        f = TextFont("seguisb.ttf", 12 if small else 13, dpi, bold=True)
+        h = round((32 if small else 40) * dpi)
+        pad = (14 if small else 22) * dpi
+        w = round(f.getlength(text) + 2 * pad)
+        r = h / 2 if not shad else 8 * dpi
+        self._imgs = []
+        from PIL import ImageTk
+        for k in (0.0, 0.08, 0.14):   # normal, üstünde, basılı
+            img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+            base = fill if fill is not None else dlg.Pbg
+            col = mix(base, fg, k) if (fill is not None or k) else None
+            if border is not None:
+                rr(img, 0, 0, w, h, r, border)
+                rr(img, 1, 1, w - 1, h - 1, r - 1, col or base)
+            elif col is not None:
+                rr(img, 0, 0, w, h, r, col)
+            Drawer(img).text((w / 2, h / 2), text, font=f, fill=tuple(fg) + (255,), anchor="mm")
+            self._imgs.append(ImageTk.PhotoImage(img))
+        self.config(image=self._imgs[0])
+        self.bind("<Enter>", lambda _e: self.config(image=self._imgs[1]))
+        self.bind("<Leave>", lambda _e: self.config(image=self._imgs[0]))
+        self.bind("<ButtonPress-1>", lambda _e: self.config(image=self._imgs[2]))
+        self.bind("<ButtonRelease-1>", self._release)
+
+    def _release(self, e):
+        self.config(image=self._imgs[1])
+        if 0 <= e.x <= self.winfo_width() and 0 <= e.y <= self.winfo_height() and self.cmd:
+            self.cmd()
+
+
 class _Dialog:
-    """Materyal renklerinde basit tk penceresi tabanı (tek kopya)."""
+    """Widget'ın tasarım diline (Material You / shadcn) uyan tk penceresi tabanı (tek kopya)."""
     _open = {}
 
     def _setup(self, app, title):
@@ -5688,30 +5681,100 @@ class _Dialog:
             except tk.TclError:
                 pass
         self.app = app
-        light = app.light
-        self.bg = "#F7F5FA" if light else "#1C1B1F"
-        self.fg = "#1C1B1F" if light else "#E6E1E5"
-        self.dim = "#49454F" if light else "#CAC4D0"
-        self.acc = "#%02x%02x%02x" % app.pal["primary"]
-        self.on_acc = "#%02x%02x%02x" % app.pal["on_primary"]
-        self.field = "#E7E0EC" if light else "#2B2930"
+        P = self.P = app.pal_to
+        shad = STYLE["shad"]
+        # M3 iletişim kutusu: surface-container-high; shadcn: kart zemini
+        self.Pbg = P["surface"] if shad else P["surface_high"]
+        self.bg = _hx(self.Pbg)
+        self.fg = _hx(P["on_surface"])
+        self.dim = _hx(P["on_surface_variant"])
+        self.acc = _hx(P["primary"])
+        self.on_acc = _hx(P["on_primary"])
+        self.field = _hx(P["surface_highest"] if not shad else P["surface_high"])
+        self.line = _hx(P.get("border", P["outline"]) if shad else P["surface_highest"])
+        load_private_fonts()
+        geist = shad and "Geist-Regular.ttf" in _PRIVATE_FONTS
+        self.ff, self.ffb = ("Geist", "Geist SemiBold") if geist else ("Segoe UI",
+                                                                         "Segoe UI Semibold")
         t = self.top = tk.Toplevel(app.root)
         _Dialog._open[type(self).__name__] = t
         t.title(title)
-        t.configure(bg=self.bg, padx=22, pady=18)
+        t.configure(bg=self.bg, padx=24, pady=20)
         t.resizable(False, False)
         t.attributes("-topmost", True)
         t.protocol("WM_DELETE_WINDOW", self.close)
         t.bind("<Escape>", lambda _e: self.close())
+        style_titlebar(t, self.Pbg, P["on_surface"], not app.light)
         return True
 
-    def btn(self, parent, text, cmd, primary=False, small=False):
-        bg, fg = (self.acc, self.on_acc) if primary else (self.field, self.fg)
-        return tk.Button(parent, text=text, bg=bg, fg=fg, activebackground=bg,
-                         activeforeground=fg, relief="flat", bd=0,
-                         padx=10 if small else 16, pady=3 if small else 7, cursor="hand2",
-                         command=cmd, font=("Segoe UI Semibold" if primary else "Segoe UI",
-                                            9 if small else 10))
+    def font(self, size, bold=False):
+        return (self.ffb if bold else self.ff, size)
+
+    def btn(self, parent, text, cmd, primary=False, small=False, kind=None):
+        return PillButton(self, parent, text, cmd,
+                          kind=kind or ("filled" if primary else "tonal"), small=small)
+
+    def entry_box(self, parent, width, font=None, mono=False):
+        """Yuvarlak kenarlı (Material: hap, shadcn: 8 px + kenarlık) giriş alanı.
+        (kapsayıcı, Entry) döndürür; odaklanınca kenarlık birincil renge döner."""
+        from PIL import ImageTk
+        dpi = self.app.dpi
+        w, h = round(width * dpi), round(44 * dpi)
+        c = tk.Canvas(parent, width=w, height=h, bg=self.bg, highlightthickness=0, bd=0)
+        P, shad = self.P, STYLE["shad"]
+        r = h / 2 if not shad else 8 * dpi
+        imgs = {}
+        for focus in (False, True):
+            img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+            edge = P["primary"] if focus else (P.get("border", P["outline"]) if shad
+                                                else P["outline"])
+            bw = 2 if focus else 1
+            rr(img, 0, 0, w, h, r, edge)
+            fillc = P["surface_highest"] if not shad else self.Pbg
+            rr(img, bw, bw, w - bw, h - bw, r - bw, fillc)
+            imgs[focus] = ImageTk.PhotoImage(img)
+        c._imgs = imgs
+        item = c.create_image(0, 0, image=imgs[False], anchor="nw")
+        fillc = _hx(P["surface_highest"] if not shad else self.Pbg)
+        e = tk.Entry(c, bg=fillc, fg=self.fg, insertbackground=self.fg, relief="flat", bd=0,
+                     highlightthickness=0, font=font or (("Consolas", 11) if mono
+                                                          else self.font(12)))
+        pad = round(18 * dpi) if not shad else round(12 * dpi)
+        c.create_window(pad, h / 2, window=e, anchor="w", width=w - 2 * pad)
+        e.bind("<FocusIn>", lambda _e: c.itemconfig(item, image=imgs[True]), add="+")
+        e.bind("<FocusOut>", lambda _e: c.itemconfig(item, image=imgs[False]), add="+")
+        return c, e
+
+    def switch(self, parent, text, value):
+        """Material / shadcn anahtar düğmesi + yazı. .get() ile değeri okunur."""
+        from PIL import ImageTk
+        dpi = self.app.dpi
+        row = tk.Frame(parent, bg=self.bg, cursor="hand2")
+        S = dpi
+        imgs = {}
+        for on in (False, True):
+            img = Image.new("RGBA", (round(46 * S), round(28 * S)), (0, 0, 0, 0))
+            MenuPanel._switch(type("S", (), {"S": S})(), img, 3, 14, on, False, self.P)
+            imgs[on] = ImageTk.PhotoImage(img)
+        state = {"on": bool(value)}
+        sw = tk.Label(row, image=imgs[state["on"]], bg=self.bg, bd=0)
+        sw._imgs = imgs
+        lbl = tk.Label(row, text=text, bg=self.bg, fg=self.fg, font=self.font(10))
+        sw.pack(side="left")
+        lbl.pack(side="left", padx=(8, 0))
+
+        def toggle(_e=None):
+            state["on"] = not state["on"]
+            sw.config(image=imgs[state["on"]])
+
+        for w_ in (row, sw, lbl):
+            w_.bind("<Button-1>", toggle)
+        row.get = lambda: state["on"]
+        return row
+
+    def title_label(self, parent, text, size=16):
+        return tk.Label(parent, text=text, bg=self.bg, fg=self.fg, font=self.font(size, True),
+                        justify="left", anchor="w")
 
     def close(self):
         _Dialog._open.pop(type(self).__name__, None)
@@ -5721,22 +5784,86 @@ class _Dialog:
             pass
 
 
+class ConnectDialog(_Dialog):
+    """Spotify hesabını bağlama (PKCE) penceresi."""
+
+    def __init__(self, app, reauth=False):
+        if not self._setup(app, T("dlg_title")):
+            return
+        t = self.top
+        self.title_label(t, T("dlg_head")).pack(anchor="w")
+        if reauth:
+            tk.Label(t, text=T("dlg_reauth"), bg=self.bg, fg=self.acc, justify="left",
+                     wraplength=round(470 * app.dpi),
+                     font=self.font(10, True)).pack(anchor="w", pady=(6, 0))
+        tk.Label(t, text=T("dlg_steps", uri=REDIRECT_URI), bg=self.bg, fg=self.dim,
+                 justify="left", font=self.font(10)).pack(anchor="w", pady=(8, 14))
+        row = tk.Frame(t, bg=self.bg)
+        row.pack(anchor="w", pady=(0, 16))
+        self.btn(row, T("dlg_dev"),
+                 lambda: webbrowser.open("https://developer.spotify.com/dashboard")
+                 ).pack(side="left")
+        self.btn(row, T("dlg_copy"), self._copy).pack(side="left", padx=8)
+        tk.Label(t, text="Client ID", bg=self.bg, fg=self.dim,
+                 font=self.font(9)).pack(anchor="w", pady=(0, 4))
+        holder, self.entry_w = self.entry_box(t, 470, mono=True)
+        holder.pack(anchor="w", pady=(0, 16))
+        if app.cfg.get("client_id"):
+            self.entry_w.insert(0, app.cfg["client_id"])
+        bottom = tk.Frame(t, bg=self.bg)
+        bottom.pack(fill="x")
+        self.status = tk.Label(bottom, text="", bg=self.bg, fg=self.dim, font=self.font(9),
+                               wraplength=round(280 * app.dpi), justify="left")
+        self.status.pack(side="left")
+        self.btn(bottom, T("dlg_connect"), self._connect, primary=True).pack(side="right")
+        self.btn(bottom, T("dlg_close"), self.close, kind="text").pack(side="right", padx=4)
+        t.focus_force()
+        self.entry_w.focus_set()
+
+    def _copy(self):
+        self.top.clipboard_clear()
+        self.top.clipboard_append(REDIRECT_URI)
+        self.status.config(text=T("dlg_copied"))
+
+    def _connect(self):
+        cid = self.entry_w.get().strip()
+        if len(cid) < 16:
+            self.status.config(text=T("dlg_invalid"))
+            return
+        self.app.web.auth_status = None
+        self.app.web.start_auth(cid)
+        self._poll()
+
+    def _poll(self):
+        try:
+            s = self.app.web.auth_status
+            if s == "ok":
+                self.status.config(text=T("dlg_ok"))
+                self.top.after(900, self.close)
+                return
+            self.status.config(text=s or "")
+            if self.app.web.auth_error:
+                return
+            self.top.after(300, self._poll)
+        except tk.TclError:  # pencere kapatıldı
+            pass
+
+
 class SearchDialog(_Dialog):
     def __init__(self, app):
         if not self._setup(app, T("s_title")):
             return
         t, web = self.top, app.web
         tk.Label(t, text=T("s_title"), bg=self.bg, fg=self.fg,
-                 font=("Segoe UI Semibold", 15)).pack(anchor="w")
+                 font=self.font(15, True)).pack(anchor="w")
         tk.Label(t, text=T("s_hint"), bg=self.bg, fg=self.dim,
-                 font=("Segoe UI", 9)).pack(anchor="w", pady=(2, 8))
-        self.entry = tk.Entry(t, bg=self.field, fg=self.fg, insertbackground=self.fg,
-                              relief="flat", font=("Segoe UI", 12), width=42)
-        self.entry.pack(fill="x", ipady=7, ipadx=8)
+                 font=self.font(9)).pack(anchor="w", pady=(2, 8))
+        holder, self.entry = self.entry_box(t, 480)
+        holder.pack(anchor="w")
         self.entry.bind("<Return>", lambda _e: self._search())
         self.results = tk.Frame(t, bg=self.bg)
         self.results.pack(fill="x", pady=(10, 0))
-        self.status = tk.Label(t, text="", bg=self.bg, fg=self.dim, font=("Segoe UI", 9),
+        self.status = tk.Label(t, text="", bg=self.bg, fg=self.dim, font=self.font(9),
                                wraplength=420, justify="left")
         self.status.pack(anchor="w", pady=(8, 0))
         self._imgs = []
@@ -5795,9 +5922,9 @@ class SearchDialog(_Dialog):
             txt = tk.Frame(row, bg=self.bg)
             txt.pack(side="left", fill="x", expand=True)
             tk.Label(txt, text=it["name"][:48], bg=self.bg, fg=self.fg, anchor="w",
-                     font=("Segoe UI Semibold", 10)).pack(anchor="w")
+                     font=self.font(10, True)).pack(anchor="w")
             tk.Label(txt, text=f'{it["artist"][:40]}  ·  {fmt_time(it["dur"])}', bg=self.bg,
-                     fg=self.dim, anchor="w", font=("Segoe UI", 9)).pack(anchor="w")
+                     fg=self.dim, anchor="w", font=self.font(9)).pack(anchor="w")
             self.btn(row, "＋ " + T("s_queue"), lambda u=it["uri"]: self._do("queue", u),
                      small=True).pack(side="right", padx=(6, 0))
             self.btn(row, "▶ " + T("s_play"), lambda u=it["uri"]: self._do("play", u),
@@ -5852,44 +5979,49 @@ class AlarmDialog(_Dialog):
         al = app.cfg["alarm"]
         hh, mm = (al.get("time") or "08:00").split(":")
         tk.Label(t, text=T("al_title"), bg=self.bg, fg=self.fg,
-                 font=("Segoe UI Semibold", 15)).pack(anchor="w")
+                 font=self.font(15, True)).pack(anchor="w")
         tk.Label(t, text=T("al_text"), bg=self.bg, fg=self.dim, justify="left",
-                 font=("Segoe UI", 9)).pack(anchor="w", pady=(4, 12))
+                 font=self.font(9)).pack(anchor="w", pady=(4, 12))
         row = tk.Frame(t, bg=self.bg)
         row.pack(anchor="w")
-        self.h = tk.Spinbox(row, from_=0, to=23, width=3, format="%02.0f", wrap=True,
-                            font=("Segoe UI Semibold", 22), justify="center", relief="flat",
-                            bg=self.field, fg=self.fg, buttonbackground=self.field,
-                            insertbackground=self.fg)
-        self.m = tk.Spinbox(row, from_=0, to=59, width=3, format="%02.0f", wrap=True,
-                            font=("Segoe UI Semibold", 22), justify="center", relief="flat",
-                            bg=self.field, fg=self.fg, buttonbackground=self.field,
-                            insertbackground=self.fg)
-        self.h.delete(0, "end")
-        self.h.insert(0, hh)
-        self.m.delete(0, "end")
-        self.m.insert(0, mm)
+        # saat seçici: büyük rakamlar + yukarı/aşağı düğmeleri (tekerlekle de değişir)
+        self.h = self._picker(row, int(hh), 24)
         self.h.pack(side="left")
         tk.Label(row, text=":", bg=self.bg, fg=self.fg,
-                 font=("Segoe UI Semibold", 22)).pack(side="left", padx=4)
+                 font=self.font(28, True)).pack(side="left", padx=8)
+        self.m = self._picker(row, int(mm), 60)
         self.m.pack(side="left")
-        self.on = tk.BooleanVar(value=True)
-        tk.Checkbutton(t, text=T("al_on"), variable=self.on, bg=self.bg, fg=self.fg,
-                       selectcolor=self.field, activebackground=self.bg,
-                       activeforeground=self.fg, font=("Segoe UI", 10)).pack(anchor="w",
-                                                                           pady=(12, 0))
+        self.on = self.switch(t, T("al_on"), True)
+        self.on.pack(anchor="w", pady=(14, 0))
         bottom = tk.Frame(t, bg=self.bg)
-        bottom.pack(fill="x", pady=(14, 0))
+        bottom.pack(fill="x", pady=(16, 0))
         self.btn(bottom, T("al_save"), self._save, primary=True).pack(side="right")
-        self.btn(bottom, T("dlg_close"), self.close).pack(side="right", padx=8)
+        self.btn(bottom, T("dlg_close"), self.close, kind="text").pack(side="right", padx=4)
         t.focus_force()
 
+    def _picker(self, parent, value, mod):
+        """Material saat seçici kutusu: tonal zeminde büyük rakam, üstte/altta ok düğmeleri."""
+        box = tk.Frame(parent, bg=self.bg)
+        state = {"v": value % mod}
+        up = self.btn(box, "▲", lambda: step(1), small=True, kind="text")
+        lbl = tk.Label(box, text=f"{state['v']:02d}", bg=_hx(self.P["secondary_container"]),
+                       fg=_hx(self.P["on_secondary_container"]), font=self.font(28, True),
+                       width=3, pady=4)
+        down = self.btn(box, "▼", lambda: step(-1), small=True, kind="text")
+
+        def step(d):
+            state["v"] = (state["v"] + d) % mod
+            lbl.config(text=f"{state['v']:02d}")
+
+        lbl.bind("<MouseWheel>", lambda e: step(1 if e.delta > 0 else -1))
+        up.pack()
+        lbl.pack(pady=2)
+        down.pack()
+        box.get = lambda: state["v"]
+        return box
+
     def _save(self):
-        try:
-            h = max(0, min(23, int(self.h.get())))
-            m = max(0, min(59, int(self.m.get())))
-        except ValueError:
-            return
+        h, m = int(self.h.get()) % 24, int(self.m.get()) % 60
         self.app.cfg["alarm"] = {"on": bool(self.on.get()), "time": f"{h:02d}:{m:02d}"}
         self.app.cfg.save()
         self.app._alarm_day = None
@@ -5910,7 +6042,7 @@ class RecapWindow(_Dialog):
         tk.Label(self.top, image=self.ph, bg=self.bg).pack()
         bottom = tk.Frame(self.top, bg=self.bg)
         bottom.pack(fill="x", pady=(12, 0))
-        self.status = tk.Label(bottom, text="", bg=self.bg, fg=self.dim, font=("Segoe UI", 9))
+        self.status = tk.Label(bottom, text="", bg=self.bg, fg=self.dim, font=self.font(9))
         self.status.pack(side="left")
         self.btn(bottom, T("wr_copy"), self._copy, primary=True).pack(side="right")
         self.btn(bottom, T("wr_save"), lambda: self._save(year)).pack(side="right", padx=8)
@@ -5957,7 +6089,7 @@ class SongDialog(_Dialog):
         info.pack(side="left", fill="both", anchor="n")
         self.info = info
         tk.Label(info, text=st["title"], bg=self.bg, fg=self.fg, justify="left", anchor="w",
-                 wraplength=round(330 * dpi), font=("Segoe UI Semibold", 16)).pack(anchor="w")
+                 wraplength=round(330 * dpi), font=self.font(16, True)).pack(anchor="w")
         self.artists = tk.Frame(info, bg=self.bg)
         self.artists.pack(anchor="w", pady=(2, 0))
         self._link(self.artists, st.get("artist") or T("unknown"),
@@ -5975,15 +6107,15 @@ class SongDialog(_Dialog):
         if liked is not None:
             self._meta(T("sd_liked"), "♥ " + T("osd_liked") if liked else "—")
         # senin dinlemen (geçmişten)
-        tk.Frame(t, bg=self.field, height=1).pack(fill="x", pady=(16, 10))
+        tk.Frame(t, bg=self.line, height=1).pack(fill="x", pady=(16, 10))
         tk.Label(t, text=T("sd_yours"), bg=self.bg, fg=self.acc,
-                 font=("Segoe UI Semibold", 9)).pack(anchor="w")
+                 font=self.font(9, True)).pack(anchor="w")
         self.mine = tk.Label(t, text=T("loading"), bg=self.bg, fg=self.fg, justify="left",
-                             anchor="w", font=("Segoe UI", 10))
+                             anchor="w", font=self.font(10))
         self.mine.pack(anchor="w", pady=(4, 0))
         row = tk.Frame(t, bg=self.bg)
         row.pack(fill="x", pady=(14, 0))
-        self.status = tk.Label(row, text="", bg=self.bg, fg=self.dim, font=("Segoe UI", 9))
+        self.status = tk.Label(row, text="", bg=self.bg, fg=self.dim, font=self.font(9))
         self.status.pack(side="left")
         self.btn(row, T("sd_open"), self._open, primary=True).pack(side="right")
         self.btn(row, T("sh_link"), self._copy).pack(side="right", padx=8)
@@ -6011,9 +6143,9 @@ class SongDialog(_Dialog):
         return lbl
 
     def _meta(self, key, val):
-        tk.Label(self.meta, text=key, bg=self.bg, fg=self.dim, font=("Segoe UI", 9),
+        tk.Label(self.meta, text=key, bg=self.bg, fg=self.dim, font=self.font(9),
                  anchor="w").grid(row=self._rows, column=0, sticky="w", pady=1)
-        tk.Label(self.meta, text=val, bg=self.bg, fg=self.fg, font=("Segoe UI", 10),
+        tk.Label(self.meta, text=val, bg=self.bg, fg=self.fg, font=self.font(10),
                  anchor="w").grid(row=self._rows, column=1, sticky="w", padx=(14, 0), pady=1)
         self._rows += 1
 
@@ -6081,7 +6213,7 @@ class SongDialog(_Dialog):
                        lambda u=uri: open_spotify(u), size=11).pack(side="left")
             if i < len(arts) - 1:
                 tk.Label(self.artists, text=", ", bg=self.bg, fg=self.dim,
-                         font=("Segoe UI", 11)).pack(side="left")
+                         font=self.font(11)).pack(side="left")
         al = tr.get("album") or {}
         self.album_lbl.config(text=al.get("name") or "")
         self.album_lbl.bind("<Button-1>", lambda _e, u=al.get("uri"): open_spotify(u))
@@ -6141,23 +6273,26 @@ class HistoryDialog(_Dialog):
         from tkinter import ttk
         t = self.top
         tk.Label(t, text=T("hs_title"), bg=self.bg, fg=self.fg,
-                 font=("Segoe UI Semibold", 15)).pack(anchor="w")
+                 font=self.font(15, True)).pack(anchor="w")
         tk.Label(t, text=T("hs_hint"), bg=self.bg, fg=self.dim,
-                 font=("Segoe UI", 9)).pack(anchor="w", pady=(2, 8))
-        self.entry = tk.Entry(t, bg=self.field, fg=self.fg, insertbackground=self.fg,
-                              relief="flat", font=("Segoe UI", 12), width=60)
-        self.entry.pack(fill="x", ipady=7, ipadx=8)
+                 font=self.font(9)).pack(anchor="w", pady=(2, 8))
+        holder, self.entry = self.entry_box(t, 740)
+        holder.pack(anchor="w")
         self.entry.bind("<KeyRelease>", lambda _e: self._schedule())
         self.entry.bind("<Return>", lambda _e: self._run())
 
         st = ttk.Style(t)
         st.theme_use("clam")
         st.configure("H.Treeview", background=self.bg, fieldbackground=self.bg,
-                     foreground=self.fg, rowheight=26, borderwidth=0, font=("Segoe UI", 10))
+                     foreground=self.fg, rowheight=26, borderwidth=0, font=self.font(10),
+                     bordercolor=self.bg, lightcolor=self.bg, darkcolor=self.bg)
+        st.layout("H.Treeview", [("Treeview.treearea", {"sticky": "nswe"})])  # çerçevesiz
         st.configure("H.Treeview.Heading", background=self.field, foreground=self.dim,
-                     relief="flat", font=("Segoe UI Semibold", 9))
-        st.map("H.Treeview", background=[("selected", self.acc)],
-               foreground=[("selected", self.on_acc)])
+                     relief="flat", font=self.font(9, True))
+        st.map("H.Treeview", background=[("selected", _hx(self.P["secondary_container"]))],
+               foreground=[("selected", _hx(self.P["on_secondary_container"]))])
+        st.configure("Vertical.TScrollbar", background=self.field, troughcolor=self.bg,
+                     bordercolor=self.bg, arrowcolor=self.dim, relief="flat")
         st.map("H.Treeview.Heading", background=[("active", self.field)])
         cols = ("time", "plays", "days", "first", "last")
         frame = tk.Frame(t, bg=self.bg)
@@ -6167,7 +6302,7 @@ class HistoryDialog(_Dialog):
         self.tree.heading("#0", text=f'{T("hs_song")} / {T("hs_artist")}', anchor="w")
         self.tree.column("#0", width=330, anchor="w")
         for c, key, w in zip(cols, ("hs_time", "hs_plays", "hs_days", "hs_first", "hs_last"),
-                             (90, 64, 50, 104, 104)):
+                             (90, 64, 50, 112, 112)):
             self.tree.heading(c, text=T(key), anchor="e" if c in ("time", "plays", "days")
                               else "center")
             self.tree.column(c, width=w, anchor="e" if c in ("time", "plays", "days")
@@ -6177,19 +6312,19 @@ class HistoryDialog(_Dialog):
         self.tree.pack(side="left", fill="both", expand=True)
         sb.pack(side="right", fill="y")
         self.tree.tag_configure("artist", foreground=self.acc,
-                                font=("Segoe UI Semibold", 10))
+                                font=self.font(10, True))
         self.tree.bind("<<TreeviewSelect>>", lambda _e: self._detail())
         self.tree.bind("<Double-1>", lambda _e: self._open())
 
         bottom = tk.Frame(t, bg=self.bg)
         bottom.pack(fill="x", pady=(10, 0))
         self.detail = tk.Label(bottom, text="", bg=self.bg, fg=self.fg, justify="left",
-                               anchor="w", font=("Segoe UI", 10))
+                               anchor="w", font=self.font(10))
         self.detail.pack(side="left", fill="x", expand=True)
         self.chart = tk.Canvas(bottom, width=200, height=58, bg=self.bg,
                                highlightthickness=0)
         self.chart.pack(side="right")
-        self.status = tk.Label(t, text="", bg=self.bg, fg=self.dim, font=("Segoe UI", 9))
+        self.status = tk.Label(t, text="", bg=self.bg, fg=self.dim, font=self.font(9))
         self.status.pack(anchor="w", pady=(6, 0))
         row = tk.Frame(t, bg=self.bg)
         row.pack(fill="x", pady=(6, 0))
@@ -6259,7 +6394,7 @@ class HistoryDialog(_Dialog):
             x0 = 2 + i * bw
             c.create_rectangle(x0 + 2, 44 - h, x0 + bw - 2, 44, fill=self.acc, width=0)
             c.create_text(x0 + bw / 2, 52, text="'" + y[2:], fill=self.dim,
-                          font=("Segoe UI", 7))
+                          font=self.font(7))
 
     def _open(self):
         sel = self.tree.selection()
