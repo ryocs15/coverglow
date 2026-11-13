@@ -148,7 +148,8 @@ STRINGS = {
         "sl_hours": "Saat", "st_hours": "DİNLEME SAATLERİ", "st_streak": "Rekor: {n} gün",
         "st_days": "{n} gün", "st_streak_v": "{n} gün seri", "since": "{d}'den beri",
         "months_full": "Ocak Şubat Mart Nisan Mayıs Haziran Temmuz Ağustos Eylül Ekim Kasım Aralık",
-        "lastyear": "Geçen yıl bugün", "wrap_btn": "★ Özet",
+        "lastyear": "Geçen yıl bugün", "wrap_btn": "★ Özet", "ly_short": "Geçen yıl bugün",
+        "ly_toast": "Geçen yıl bugün: {t} · {a}", "m_memory": "Günlük \"geçen yıl bugün\" hatırlatması",
         "wr_title": "{y} Özeti", "wr_total": "toplam dinleme", "wr_plays": "çalma",
         "wr_artists": "EN ÇOK DİNLENEN SANATÇILAR", "wr_tracks": "EN ÇOK DİNLENEN ŞARKILAR",
         "wr_month": "En yoğun ay", "wr_day": "En sevdiğin gün", "wr_hour": "En sevdiğin saat",
@@ -273,7 +274,8 @@ STRINGS = {
         "st_days": "{n} days", "st_streak_v": "{n}-day streak", "since": "since {d}",
         "months_full": ("January February March April May June July August September October "
                         "November December"),
-        "lastyear": "On this day last year", "wrap_btn": "★ Recap",
+        "lastyear": "On this day last year", "wrap_btn": "★ Recap", "ly_short": "Last year",
+        "ly_toast": "A year ago today: {t} · {a}", "m_memory": "Daily \"a year ago today\" reminder",
         "wr_title": "{y} Recap", "wr_total": "total listening", "wr_plays": "plays",
         "wr_artists": "TOP ARTISTS", "wr_tracks": "TOP SONGS",
         "wr_month": "Busiest month", "wr_day": "Favorite day", "wr_hour": "Favorite hour",
@@ -2053,6 +2055,8 @@ class App:
         self.cfg.setdefault("bg", "solid")
         self.cfg.setdefault("fps", 60)
         self.cfg.setdefault("ui", "material")   # tasarım dili: material / shadcn
+        self.cfg.setdefault("memory", True)     # günlük "geçen yıl bugün" hatırlatması
+        self._start_t = time.monotonic()
         self.cfg.setdefault("react", True)
         self.cfg.setdefault("duck", True)
         self.cfg.setdefault("osd", True)
@@ -2077,6 +2081,7 @@ class App:
         global LANG
         LANG = self.cfg.setdefault("lang", default_lang())
         self.history = self._load_history()
+        self.hist_off = 0   # Geçmiş listesinin kaydırma konumu
         self._hist_thumbs = {}
         self._toast_key = None       # son bildirimi gösterilen şarkı
         self._seen_first = False     # açılıştaki ilk şarkı için bildirim gösterme
@@ -2188,7 +2193,7 @@ class App:
 
     # ---------------- son çalınanlar (yerel geçmiş)
     HISTORY_PATH = os.path.join(APP_DIR, "history.json")
-    HISTORY_MAX = 20
+    HISTORY_MAX = 50
 
     def _load_history(self):
         try:
@@ -2221,25 +2226,23 @@ class App:
         except Exception as e:  # noqa: BLE001
             log("geçmiş kaydedilemedi:", repr(e))
 
-    def _recent_items(self, rows):
-        """Şu an gösterilen şarkı hariç son çalınanlar."""
+    def _recent_all(self):
+        """Şu an gösterilen şarkı hariç tüm son çalınanlar (en yeni üstte)."""
         v = self._view()
         cur = (v.get("title"), v.get("artist"))
-        return [h for h in self.history if (h["title"], h["artist"]) != cur][:rows]
+        return [h for h in self.history if (h["title"], h["artist"]) != cur]
+
+    def _recent_items(self, rows):
+        return self._recent_all()[:rows]
 
     def _recent_rows(self, rows):
-        """Geçmiş sekmesinin satırları: varsa en üstte 'geçen yıl bugün', sonra son çalınanlar.
+        """Geçmiş sekmesinde görünen satırlar (fare tekerleğiyle kaydırılır).
         Her satır: title, sub, thumb, right, q (Spotify'da aranacak metin)."""
-        out = []
-        ly = self._last_year_today()
-        if ly:
-            title, artist, sec = ly
-            out.append({"title": T("lastyear"), "sub": f"{title} · {artist}", "thumb": "cal",
-                        "right": fmt_dur(sec), "q": f"{title} {artist}"})
-        for h in self._recent_items(rows - len(out)):
-            out.append({"title": h["title"], "sub": h["artist"], "thumb": self._hist_thumb(h),
-                        "right": time_ago(h.get("t", 0)), "q": f'{h["title"]} {h["artist"]}'})
-        return out
+        items = self._recent_all()
+        self.hist_off = max(0, min(self.hist_off, len(items) - rows))
+        return [{"title": h["title"], "sub": h["artist"], "thumb": self._hist_thumb(h),
+                 "right": time_ago(h.get("t", 0)), "q": f'{h["title"]} {h["artist"]}'}
+                for h in items[self.hist_off:self.hist_off + rows]]
 
     def _hist_thumb(self, h):
         key = (h["title"], h["artist"], h.get("t"), self.S)
@@ -2565,6 +2568,7 @@ class App:
             self.lyrics.request(st.get("title"), st.get("artist"), st.get("album"), st.get("end"))
         self._audio_tick(now, st, playing)
         self._alarm_tick(st)
+        self._memory_tick(now, st, playing)
         if st.get("ok") and not self.pending:  # atlama sürerken aradaki şarkılar için yenileme
             self.web.notify((st["title"], st["artist"]), playing)
             if st.get("title") and (st.get("art_changed") or self.last is None
@@ -3411,6 +3415,7 @@ class App:
                int(time.time() // 60) if self.cfg["list_tab"] != "queue" else 0,
                self.cfg["accent"], self.cfg["bg"], self.glass_ver,
                self.cfg["stats_period"], self.cfg["stats_list"], self.import_ver,
+               self.hist_off if self.cfg["list_tab"] == "recent" else 0,
                (self.lyrics.version, self._lyric_index())
                if self.cfg["list_tab"] == "lyrics" and not self.mini else None,
                self._win_pos() if self.cfg["bg"] == "glass" else None)
@@ -3476,6 +3481,30 @@ class App:
             move_window(self.hwnd, x, ny)
             self.cfg["x"], self.cfg["y"] = x, ny
             self.cfg.save()
+
+    def _memory_tick(self, now, st, playing):
+        """Günde bir kez, o gün müzik ilk çalmaya başladığında 'geçen yıl bugün' anısı.
+        Oyundayken (tam ekran) gösterilmez; o zaman bir sonraki uygun ana kalır."""
+        if not (playing and self.cfg["memory"]) or self.pending:
+            return
+        today = date.today().isoformat()
+        if self.cfg.get("memory_day") == today or now - self._start_t < 8:
+            return
+        if now - getattr(self, "_mem_check", 0) < 30:  # tam ekran kontrolünü sık yapma
+            return
+        self._mem_check = now
+        ly = self._last_year_today()
+        if not ly:
+            self.cfg["memory_day"] = today
+            return
+        if self.inside or fullscreen_app((self.hwnd, self.toast.hwnd)) is not None:
+            return
+        self.cfg["memory_day"] = today
+        self.cfg.save()
+        title, artist, _sec = ly
+        self.toast.show_message(IC_CAL, T("lastyear").upper(), None, hold=6000,
+                                sub=f"{title} · {artist}",
+                                on_click=lambda: self._spotify_search(f"{title} {artist}"))
 
     def _like_hotkey(self):
         """Ctrl+Alt+L: çalan şarkıyı beğen / beğeniyi kaldır ve kısa bir kalp göstergesi göster
@@ -4061,6 +4090,15 @@ class App:
                 d.text((X(W - 24), X(cy)), right, font=F["qsub"],
                        fill=P["on_surface_variant"] + (255,), anchor="rm")
             hits.append((hid, 8, ry, W - 8, ry + Q_ROW))
+        if tab == "recent":  # kaydırma göstergesi (daha fazla şarkı varsa)
+            total = len(self._recent_all())
+            if total > rows:
+                ty0, ty1 = top + 4, top + len(items) * Q_ROW - 4
+                th_ = max(14.0, (ty1 - ty0) * rows / total)
+                tyy = ty0 + (ty1 - ty0 - th_) * self.hist_off / max(1, total - rows)
+                rr(img, X(W - 7), X(ty0), X(W - 4), X(ty1), X(1.5), P["on_surface"], alpha=18)
+                rr(img, X(W - 7), X(tyy), X(W - 4), X(tyy + th_), X(1.5), P["on_surface_variant"],
+                   alpha=150)
 
     def _render_stats(self, img, d, top, hits):
         S, P, F = self.S, self.pal, self.F
@@ -4115,8 +4153,20 @@ class App:
         # özet kutuları (bir yıl açıkken üçüncü kutu yıllık özet kartını açar)
         gap, x0, ty = 8, 16, top + 34
         tw = (W - 32 - 2 * gap) / 3
+        ly = self._last_year_today() if period == "7" else None
         for i, (val, lbl) in enumerate(sm["tiles"]):
             tx = x0 + i * (tw + gap)
+            if i == 2 and ly:  # 7 gün: geçen yıl bugün en çok dinlenen şarkı (tıklanabilir)
+                col = P["primary_container"]
+                if hov == "sly":
+                    col = mix(col, P["on_primary_container"], 0.12)
+                rr(img, X(tx), X(ty), X(tx + tw), X(ty + 52), X(16), col)
+                d.text((X(tx + 12), X(ty + 19)), fit_text(ly[0], F["qhead"], X(tw - 20)),
+                       font=F["qhead"], fill=P["on_primary_container"] + (255,), anchor="lm")
+                d.text((X(tx + 12), X(ty + 37)), fit_text(T("ly_short"), F["qsub"], X(tw - 20)),
+                       font=F["qsub"], fill=P["on_primary_container"] + (255,), anchor="lm")
+                hits.append(("sly", tx, ty, tx + tw, ty + 52))
+                continue
             if i == 2 and period.startswith("y"):
                 col = P["primary_container"]
                 if hov == "swrap":
@@ -4471,11 +4521,24 @@ class App:
                                                          else -SCALE_STEP))
             return
         x, y = self._xy(e)
-        if self._hit(x, y) == "art":  # kapak üstünde tekerlek: Spotify'ın sesi
+        h = self._hit(x, y) or ""
+        if self.cfg["list_tab"] == "recent" and not self.mini and (
+                (h[:1] == "h" and h[1:].isdigit()) or y > MAIN_H + GAP + Q_HEAD):
+            # Geçmiş listesini kaydır
+            total = len(self._recent_all())
+            rows = max(1, min(Q_ROWS, int(self.cfg["queue_rows"])))
+            off = max(0, min(total - rows, self.hist_off + (-1 if e.delta > 0 else 1)))
+            if off != self.hist_off:
+                self.hist_off = off
+                self.base_key = None
+                self.hover = None
+                self._render_all()
+            return
+        if h == "art":  # kapak üstünde tekerlek: Spotify'ın sesi
             self._change_volume(0.05 if e.delta > 0 else -0.05)
             self._render_all()
             return
-        if self._hit(x, y) == "seek" and self.st.get("ok"):
+        if h == "seek" and self.st.get("ok"):
             pos, end = self._position()
             target = max(0.0, min(end, pos + (5 if e.delta > 0 else -5)))
             self.seek_hold = (target, time.monotonic())
@@ -4517,6 +4580,10 @@ class App:
             self._set("stats_period", a[3:])
         elif a == "shist":
             HistoryDialog(self)
+        elif a == "sly":  # geçen yıl bugün: o şarkıyı Spotify'da aç
+            ly = self._last_year_today()
+            if ly:
+                self._spotify_search(f"{ly[0]} {ly[1]}")
         elif a == "swrap":
             RecapWindow(self, int(self.cfg["stats_period"][1:]))
         elif a == "sup":  # açılmış aydan yıla, yıldan tümüne
@@ -4662,7 +4729,8 @@ class Toast:
         self._hold_until = 0.0
         self.hold = self.HOLD_MS
         self.surface.full(Image.new("RGBA", (self.WM, self.HM), (0, 0, 0, 0)))
-        t.bind("<Button-1>", lambda _e: self.hide())
+        t.bind("<Button-1>", lambda _e: self._clicked())
+        self.on_click = None
         self._job = None
         self._target = 0
         self._pos = (0, 0)
@@ -4697,7 +4765,13 @@ class Toast:
         ve tıklamaları oyuna geçirir)."""
         self._present(self._render(st), self.TW, self.TH, fs, self.HOLD_MS)
 
-    def show_message(self, icon, text, fs=None, value=None, hold=1400):
+    def _clicked(self):
+        fn, self.on_click = self.on_click, None
+        self.hide()
+        if fn:
+            fn()
+
+    def show_message(self, icon, text, fs=None, value=None, hold=1400, on_click=None, sub=None):
         """Kısa ekran göstergesi (kısayollar, alarm, kopyalandı): simge + metin
         (+ value verilirse ses çubuğu)."""
         app = self.app
@@ -4711,7 +4785,12 @@ class Toast:
         rr(img, X(10), X(10), X(50), X(50), 0, P["primary"], ellipse=True)
         d.text((X(30), X(30)), icon, font=app.icon_font(17), fill=P["on_primary"] + (255,),
                anchor="mm")
-        if value is None:
+        if sub is not None:  # iki satır: küçük başlık + asıl metin
+            d.text((X(64), X(21)), fit_text(text, F["status"], X(w - 80)), font=F["status"],
+                   fill=P["primary"] + (255,), anchor="lm")
+            d.text((X(64), X(40)), fit_text(sub, F["mtitle"], X(w - 80)), font=F["mtitle"],
+                   fill=P["on_surface"] + (255,), anchor="lm")
+        elif value is None:
             d.text((X(64), X(30)), fit_text(text, F["mtitle"], X(w - 80)), font=F["mtitle"],
                    fill=P["on_surface"] + (255,), anchor="lm")
         else:
@@ -4723,11 +4802,13 @@ class Toast:
             if value > 0:
                 rr(img, X(64), X(36), X(64 + (w - 84) * value), X(41), X(2.5), P["primary"])
         self._present(img, w, h, fs, hold)
+        self.on_click = on_click
 
     def _present(self, img, w, h, fs, hold):
         S = self.app.S
         self.hold = hold
         self._z_logged = False
+        self.on_click = None
         self.fs = fs is not None
         ex = user32.GetWindowLongPtrW(self.hwnd, GWL_EXSTYLE)
         ex = (ex | WS_EX_TRANSPARENT) if self.fs else (ex & ~WS_EX_TRANSPARENT)
@@ -5209,6 +5290,8 @@ class MenuPanel:
                  "set": lambda v: app._set("notify", v)},
                 {"t": "toggle", "id": "t_osd", "label": T("m_osd"), "on": c["osd"],
                  "set": lambda v: app._set("osd", v)},
+                {"t": "toggle", "id": "t_mem", "label": T("m_memory"), "on": c["memory"],
+                 "set": lambda v: app._set("memory", v)},
                 {"t": "toggle", "id": "t_duck", "label": T("m_duck"), "on": c["duck"],
                  "set": lambda v: app._set("duck", v)},
                 {"t": "sep"},
