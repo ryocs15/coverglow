@@ -2159,6 +2159,8 @@ class App:
         self.last_theme_check = 0.0
         self.st = {"ok": False}
         self.pending = None   # sıradakilerden seçilen, Spotify'ın henüz onaylamadığı şarkı
+        self._morph = None    # mini ↔ normal geçiş animasyonu
+        self._anchor = {"bottom": False, "deferred": None}
         self.last = None
         self._last_saved = 0.0
         self._load_last()
@@ -2485,12 +2487,66 @@ class App:
 
     # ---------------- mini mod
     def _toggle_mini(self):
+        if self._morph:
+            self._finish_morph()
+        old, old_h = getattr(self, "_frame", None), getattr(self, "_shown_h", None)
         self.mini = not self.mini
         self.cfg["mini"] = self.mini
         self.cfg.save()
         self.hover = None
+        self._morph = "pending" if old is not None and old_h else None  # yeni kareyi basma
         self._apply_scale()
         self._render_all()
+        if self._morph != "pending":
+            return
+        new_h = self._shown_h
+        a = self._anchor
+        H = max(old_h, new_h)
+        placed = []
+        for img, h in ((old, old_h), (self._frame, new_h)):
+            c = Image.new("RGBA", (self.WMAX, H), (0, 0, 0, 0))
+            c.paste(img.crop((0, 0, self.WMAX, h)), (0, H - h if a["bottom"] else 0))
+            placed.append(c)
+        rad = lambda mini: (MINI_H / 2 if mini else 28) * self.S  # noqa: E731
+        cap = STYLE["r"] if STYLE["shad"] else 1e9
+        self._morph = {"t0": time.monotonic(), "old": placed[0], "new": placed[1],
+                       "oh": old_h, "nh": new_h, "H": H, "bottom": a["bottom"],
+                       "r0": min(cap, rad(not self.mini)), "r1": min(cap, rad(self.mini))}
+        self._morph_step()
+
+    MORPH_S = 0.26  # mini ↔ normal geçiş süresi
+
+    def _morph_step(self):
+        """Geçiş karesi: kart boyu eskiden yeniye büyür/küçülür (sabit kenardan), iki görünüm
+        birbirine karışır. Bitince son kareyi normal yoldan bas."""
+        m = self._morph
+        t = min(1.0, (time.monotonic() - m["t0"]) / self.MORPH_S)
+        e = 1 - (1 - t) ** 3
+        H, w = m["H"], self.WP
+        h = m["oh"] + (m["nh"] - m["oh"]) * e
+        top = H - h if m["bottom"] else 0.0
+        frame = Image.blend(m["old"], m["new"], e)
+        mask = Image.new("L", frame.size, 0)
+        r = m["r0"] + (m["r1"] - m["r0"]) * e
+        it, ib = int(top), int(math.ceil(top + h))
+        mask.paste(_rr_mask(w, ib - it, 0, top - it, w, top + h - it, r), (0, it))
+        from PIL import ImageChops
+        frame.putalpha(ImageChops.multiply(frame.getchannel("A"), mask))
+        self.surface.full(frame, H + 2)
+        if t >= 1.0:
+            self._finish_morph()
+
+    def _finish_morph(self):
+        m, self._morph = self._morph, None
+        mv = self._anchor.get("deferred")
+        if mv:  # küçülürken pencereyi en sonda yeni yerine taşı
+            self._anchor["deferred"] = None
+            move_window(self.hwnd, *mv)
+            self.cfg["x"], self.cfg["y"] = mv
+            self.cfg.save()
+        if m:
+            self.base_key = None
+            self._render_all()
 
     def _on_double(self, e):
         x, y = self._xy(e)
@@ -2689,6 +2745,9 @@ class App:
             animating = True
 
         self._render_all()
+        if isinstance(self._morph, dict):  # mini ↔ normal geçişi
+            self._morph_step()
+            animating = True
         if self.marq is not None:
             animating = True
         # animasyon varken ~60 fps: bu karenin süresini düşerek sabit aralık tut
@@ -3459,10 +3518,12 @@ class App:
                     off = self._marq_offset()
                     self.marq_key = off
                     frame.paste(self._render_marquee(off), (self.marq["x"], self.marq["y0"]))
-                self.surface.full(frame, round(self.content_h * self.S) + 4)
-            else:
+                self._frame = frame
+                if not self._morph:  # geçiş animasyonu sürerken kareleri o basar
+                    self.surface.full(frame, round(self.content_h * self.S) + 4)
+            elif not self._morph:
                 self.surface.region(strip, 0, self.sy0)
-        if self.marq and not full:
+        if self.marq and not full and not self._morph:
             off = self._marq_offset()
             if off != self.marq_key:
                 self.marq_key = off
@@ -3482,10 +3543,16 @@ class App:
             return
         wa = monitor_info(self.hwnd).rcWork
         ny = y
-        if y + old_h / 2 > (wa.top + wa.bottom) / 2:  # alt yarıda: alttan sabitle
+        bottom = y + old_h / 2 > (wa.top + wa.bottom) / 2  # alt yarıda: alttan sabitle
+        if bottom:
             ny = y + old_h - new_h
         ny = max(wa.top, min(ny, wa.bottom - new_h))
+        self._anchor = {"bottom": bottom, "deferred": None}
         if ny != y:
+            if self._morph == "pending" and new_h < old_h:
+                # küçülme animasyonu eski yerde oynasın; pencere sonra taşınır
+                self._anchor["deferred"] = (x, ny)
+                return
             move_window(self.hwnd, x, ny)
             self.cfg["x"], self.cfg["y"] = x, ny
             self.cfg.save()
