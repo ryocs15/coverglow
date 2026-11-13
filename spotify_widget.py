@@ -188,7 +188,7 @@ STRINGS = {
         "q_share": "Paylaş", "q_open": "Spotify", "off": "Kapalı", "on": "Açık",
         "sleep_left": "{m} dk kaldı", "seg_desktop": "Masaüstü", "seg_top": "Her zaman üstte",
         "m_rows_s": "Listedeki satır", "m_idle_s": "Fare uzaktayken", "m_reconnect": "Yeniden bağla",
-        "hk_list": "KISAYOLLAR", "m_fps": "Animasyon akıcılığı",
+        "hk_list": "KISAYOLLAR", "m_fps": "Animasyon akıcılığı", "m_ui": "Tasarım",
         "fps_30": "30 fps · tasarruflu", "fps_60": "60 fps · akıcı",
         "m_accent": "Renk", "ac_auto": "Albüm kapağından", "ac_green": "Yeşil",
         "ac_blue": "Mavi", "ac_purple": "Mor", "ac_pink": "Pembe", "ac_red": "Kırmızı",
@@ -313,7 +313,7 @@ STRINGS = {
         "q_share": "Share", "q_open": "Spotify", "off": "Off", "on": "On",
         "sleep_left": "{m} min left", "seg_desktop": "Desktop", "seg_top": "Always on top",
         "m_rows_s": "Rows in list", "m_idle_s": "When mouse is away", "m_reconnect": "Reconnect",
-        "hk_list": "SHORTCUTS", "m_fps": "Animation smoothness",
+        "hk_list": "SHORTCUTS", "m_fps": "Animation smoothness", "m_ui": "Design",
         "fps_30": "30 fps · saver", "fps_60": "60 fps · smooth",
         "m_accent": "Color", "ac_auto": "From album art", "ac_green": "Green",
         "ac_blue": "Blue", "ac_purple": "Purple", "ac_pink": "Pink", "ac_red": "Red",
@@ -998,6 +998,7 @@ def build_scheme(seed, light):
             "secondary_container": T(88, sp * 0.35), "on_secondary_container": T(16, sp * 0.35),
             "surface": T(95, sn), "surface_high": T(91, sn), "surface_highest": T(87, sn),
             "on_surface": T(10, sn), "on_surface_variant": T(32, sn), "outline": T(55, sn),
+            "border": T(85, sn),
         }
     return {
         "primary": T(80, sp), "on_primary": T(18, sp),
@@ -1005,7 +1006,68 @@ def build_scheme(seed, light):
         "secondary_container": T(26, sp * 0.35), "on_secondary_container": T(90, sp * 0.35),
         "surface": T(11, sn), "surface_high": T(16, sn), "surface_highest": T(23, sn),
         "on_surface": T(92, sn), "on_surface_variant": T(76, sn), "outline": T(55, sn),
+        "border": T(24, sn),
     }
+
+
+def hexc(h):
+    return tuple(int(h[i:i + 2], 16) for i in (1, 3, 5))
+
+
+def oklch(L, C, h):
+    """CSS oklch() → sRGB (0..255)."""
+    a, b = C * math.cos(math.radians(h)), C * math.sin(math.radians(h))
+    l_ = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3
+    m_ = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3
+    s_ = (L - 0.0894841775 * a - 1.2914855480 * b) ** 3
+    lin = (4.0767416621 * l_ - 3.3077115913 * m_ + 0.2309699292 * s_,
+           -1.2684380046 * l_ + 2.6097574011 * m_ - 0.3413193965 * s_,
+           -0.0041960863 * l_ - 0.7034186147 * m_ + 1.7076147010 * s_)
+
+    def enc(c):
+        c = max(0.0, min(1.0, c))
+        return c * 12.92 if c <= 0.0031308 else 1.055 * c ** (1 / 2.4) - 0.055
+    return tuple(round(enc(c) * 255) for c in lin)
+
+
+# shadcn/ui v4 "zinc" teması — github.com/shadcn-ui/ui, apps/v4/registry/themes.ts
+SHADCN_ZINC = {
+    "light": {"background": (1, 0, 0), "foreground": (0.141, 0.005, 285.823),
+              "card": (1, 0, 0), "primary": (0.21, 0.006, 285.885),
+              "primary-foreground": (0.985, 0, 0), "secondary": (0.967, 0.001, 286.375),
+              "secondary-foreground": (0.21, 0.006, 285.885),
+              "muted-foreground": (0.552, 0.016, 285.938), "accent": (0.967, 0.001, 286.375),
+              "accent-foreground": (0.21, 0.006, 285.885), "border": (0.92, 0.004, 286.32),
+              "ring": (0.705, 0.015, 286.067), "strong": (0.92, 0.004, 286.32)},
+    "dark": {"background": (0.141, 0.005, 285.823), "foreground": (0.985, 0, 0),
+             "card": (0.21, 0.006, 285.885), "primary": (0.92, 0.004, 286.32),
+             "primary-foreground": (0.21, 0.006, 285.885), "secondary": (0.274, 0.006, 286.033),
+             "secondary-foreground": (0.985, 0, 0),
+             "muted-foreground": (0.705, 0.015, 286.067), "accent": (0.274, 0.006, 286.033),
+             "accent-foreground": (0.985, 0, 0), "ring": (0.552, 0.016, 285.938),
+             "strong": (0.37, 0.013, 285.805)},   # chart-4: iz / boş çubuk tonu
+}
+SHADCN_RADIUS = 10  # --radius: 0.625rem
+
+
+def build_shadcn(light, accent=None):
+    """shadcn/ui 'zinc' teması (nötr). accent (ton, doygunluk) verilirse birincil renk o olur
+    (shadcn'in renkli temaları gibi), yoksa siyah/beyaz."""
+    t = {k: oklch(*v) for k, v in SHADCN_ZINC["light" if light else "dark"].items()}
+    if not light:  # koyu temada kenarlık: beyaz %10 (kart zemininin üstünde)
+        t["border"] = mix(t["card"], (255, 255, 255), 0.10)
+    p = {"surface": t["card"], "surface_high": t["secondary"], "surface_highest": t["strong"],
+         "on_surface": t["foreground"], "on_surface_variant": t["muted-foreground"],
+         "outline": t["ring"], "primary": t["primary"], "on_primary": t["primary-foreground"],
+         "border": t["border"], "primary_container": t["accent"],
+         "on_primary_container": t["accent-foreground"], "secondary_container": t["secondary"],
+         "on_secondary_container": t["secondary-foreground"]}
+    if accent is not None and accent[1] > 0.05:  # renkli tema (ör. shadcn 'blue', 'rose')
+        h, s = accent
+        p["primary"] = tuple(round(c * 255) for c in colorsys.hls_to_rgb(
+            h, 0.62 if not light else 0.48, min(0.85, max(0.55, s))))
+        p["on_primary"] = (255, 255, 255) if light else hexc("#09090b")
+    return p
 
 
 def mix(a, b, t):
@@ -1039,10 +1101,27 @@ def _rr_mask(w, h, fx0, fy0, fx1, fy1, r, ellipse=False):
     return m
 
 
+# Tasarım dili: "material" (Material You: büyük yuvarlaklar, tonal dolgular) ya da
+# "shadcn" (shadcn/ui: nötr renkler, ince kenarlıklar, küçük köşeler). shadcn'de rr()
+# köşeleri sınırlar ve düğme boyutundaki daireleri köşeli-yuvarlak kareye çevirir.
+STYLE = {"shad": False, "r": 0.0, "btn": 0.0}
+
+
+def set_style(name, S):
+    STYLE["shad"] = name == "shadcn"
+    STYLE["r"] = 10.0 * S     # en büyük köşe yarıçapı: shadcn --radius 0.625rem
+    STYLE["btn"] = 30.0 * S   # bundan büyük daireler düğmedir: kareleştir
+
+
 def rr(img, x0, y0, x1, y1, r, color, alpha=255, ellipse=False):
     """Kenarları yumuşatılmış yuvarlak dikdörtgen (fiziksel piksel)."""
     if x1 - x0 < 0.5 or y1 - y0 < 0.5:
         return
+    if STYLE["shad"]:
+        if ellipse and (x1 - x0) >= STYLE["btn"] and abs((x1 - x0) - (y1 - y0)) < 1:
+            ellipse, r = False, STYLE["r"] * 0.8   # düğmeler: rounded-md (radius - 2px)
+        elif not ellipse:
+            r = min(r, STYLE["r"])
     r = max(0.0, min(r, (x1 - x0) / 2, (y1 - y0) / 2))
     ix0, iy0 = max(0, int(math.floor(x0))), max(0, int(math.floor(y0)))
     ix1 = min(img.width, int(math.ceil(x1)))
@@ -1059,6 +1138,8 @@ def rr(img, x0, y0, x1, y1, r, color, alpha=255, ellipse=False):
 
 
 def rounded_image(src, size, radius):
+    if STYLE["shad"]:
+        radius = min(radius, STYLE["r"] * 0.8)
     img = src.convert("RGB")
     w, h = img.size
     m = min(w, h)
@@ -1110,12 +1191,28 @@ def _fallback_order(text):
     return idx
 
 
+# uygulamayla gelen yazı tipleri (Geist, OFL-1.1: github.com/vercel/geist-font)
+BUNDLED_FONTS = os.path.join(getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__))),
+                             "fonts")
+_GEIST = {"segoeui.ttf": "Geist-Regular.ttf", "seguisb.ttf": "Geist-SemiBold.ttf"}
+
+
+def ui_font(name):
+    """Seçili tasarım diline göre yazı tipi dosyası (shadcn/ui: Geist, Material: Segoe UI)."""
+    if STYLE["shad"] and name in _GEIST:
+        p = os.path.join(BUNDLED_FONTS, _GEIST[name])
+        if os.path.exists(p):
+            return p
+    return name
+
+
 class TextFont:
     """Eksik karakterleri yedek yazı tiplerinden tamamlayan yazı tipi."""
 
     def __init__(self, filename, px, scale, bold=False):
         self.size = max(6, round(px * scale))
         self.bold = bold
+        filename = ui_font(filename)  # shadcn temasında Segoe yerine Geist
         if not os.path.exists(os.path.join(FONT_DIR, filename)):
             filename = "segoeui.ttf"
         self.filename = filename
@@ -1918,6 +2015,7 @@ class App:
         self.cfg.setdefault("accent", "auto")
         self.cfg.setdefault("bg", "solid")
         self.cfg.setdefault("fps", 60)
+        self.cfg.setdefault("ui", "material")   # tasarım dili: material / shadcn
         self.cfg.setdefault("react", True)
         self.cfg.setdefault("duck", True)
         self.cfg.setdefault("osd", True)
@@ -2130,6 +2228,8 @@ class App:
     def _apply_scale(self):
         sc = max(SCALE_MIN, min(SCALE_MAX, float(self.cfg["scale"])))
         self.S = S = self.dpi * sc
+        set_style(self.cfg.get("ui", "material"), S)
+        self._hist_thumbs = {}
         self.WP, self.HP = round(W * S), round(TOTAL_H * S)
         if self.mini:  # ince ilerleme çizgisinin bulunduğu şerit
             self.sy0 = round((MINI_BAR_Y - 4) * S)
@@ -2561,8 +2661,20 @@ class App:
         self._start_palette(self._scheme())
 
     def _scheme(self):
+        if self.cfg.get("ui") == "shadcn":
+            # shadcn: 'kapaktan' seçiliyse nötr (siyah/beyaz), sabit renk seçiliyse o renk
+            return build_shadcn(self.light, dict(ACCENTS).get(self.cfg.get("accent")))
         seed = dict(ACCENTS).get(self.cfg.get("accent"), self.seed)
         return build_scheme(seed, self.light)
+
+    def _set_ui(self, v):
+        self._set("ui", v)
+        set_style(v, self.S)
+        self._apply_scale()
+        self.pal = self.pal_from = self.pal_to = self._scheme()
+        self.pal_version += 1
+        self.base_key = None
+        self._render_all()
 
     # ---------------- arka plan: düz / cam / yarı şeffaf
     @staticmethod
@@ -2632,6 +2744,7 @@ class App:
         P, mode = self.pal, self.cfg["bg"]
         if mode == "clear":
             rr(img, x0, y0, x1, y1, r, P["surface"], alpha=150)
+            self._card_border(img, x0, y0, x1, y1, r)
             return
         if mode == "glass":
             bg = self._glass_bg()
@@ -2646,8 +2759,30 @@ class App:
                 layer.putalpha(_rr_mask(w, h, x0 - ix0, y0 - iy0, x1 - ix0, y1 - iy0,
                                         max(0.0, min(r, (x1 - x0) / 2, (y1 - y0) / 2))))
                 img.alpha_composite(layer, (ix0, iy0))
+                self._card_border(img, x0, y0, x1, y1, r)
                 return
+        if STYLE["shad"]:  # shadcn kartı: 1 px kenarlık + düz zemin
+            rr(img, x0, y0, x1, y1, r, P["border"])
+            b = max(1.0, round(self.S))
+            rr(img, x0 + b, y0 + b, x1 - b, y1 - b, r - b, P["surface"])
+            return
         rr(img, x0, y0, x1, y1, r, P["surface"])
+
+    def _card_border(self, img, x0, y0, x1, y1, r):
+        """shadcn'de cam / yarı şeffaf kartlara da ince kenarlık (sadece çerçeve)."""
+        if not STYLE["shad"]:
+            return
+        b = max(1.0, round(self.S))
+        ix0, iy0 = int(math.floor(x0)), int(math.floor(y0))
+        w, h = int(math.ceil(x1)) - ix0, int(math.ceil(y1)) - iy0
+        r = min(r, STYLE["r"])
+        outer = _rr_mask(w, h, x0 - ix0, y0 - iy0, x1 - ix0, y1 - iy0, r)
+        inner = _rr_mask(w, h, x0 - ix0 + b, y0 - iy0 + b, x1 - ix0 - b, y1 - iy0 - b,
+                         max(0.0, r - b))
+        from PIL import ImageChops
+        layer = Image.new("RGBA", (w, h), self.pal["border"] + (255,))
+        layer.putalpha(ImageChops.subtract(outer, inner))
+        img.alpha_composite(layer, (ix0, iy0))
 
     # ---------------- dinleme istatistikleri
     def _load_stats(self):
@@ -4191,11 +4326,18 @@ class App:
         rem = px + gap
         if rem < bx1 - 1:
             rr(strip, rem, cy - X(2), bx1, cy + X(2), X(2), P["surface_highest"])
-            if rem < bx1 - X(10):
+            if rem < bx1 - X(10) and not STYLE["shad"]:
                 rr(strip, bx1 - X(4), cy - X(2), bx1, cy + X(2), 0, primary, ellipse=True)
-        # tutamaç
-        rr(strip, px - X(tw / 2), cy - X(th / 2), px + X(tw / 2), cy + X(th / 2), X(tw / 2),
-           primary)
+        # tutamaç (Material: dikey hap; shadcn: kenarlıklı yuvarlak)
+        if STYLE["shad"]:
+            rt = 9 if active else 7.5
+            rr(strip, px - X(rt), cy - X(rt), px + X(rt), cy + X(rt), 0, primary, ellipse=True)
+            ri = rt - 2
+            rr(strip, px - X(ri), cy - X(ri), px + X(ri), cy + X(ri), 0, P["surface"],
+               ellipse=True)
+        else:
+            rr(strip, px - X(tw / 2), cy - X(th / 2), px + X(tw / 2), cy + X(th / 2),
+               X(tw / 2), primary)
         # süreler
         ty = X(180) - self.sy0
         d.text((bx0, ty), fmt_time(shown), font=self.F["time"],
@@ -4722,11 +4864,12 @@ class MenuPanel:
     def __init__(self, app, x, y):
         self.app = app
         self.S = S = app.dpi
-        self.F = {k: TextFont(n, px, S, bold=(n == "seguisb.ttf")) for k, (n, px) in {
+        self._font_spec = {k: (n, px, n == "seguisb.ttf") for k, (n, px) in {
             "label": ("segoeui.ttf", 13), "value": ("segoeui.ttf", 12),
             "head": ("seguisb.ttf", 11), "title": ("seguisb.ttf", 15),
             "seg": ("segoeui.ttf", 12), "segb": ("seguisb.ttf", 12),
             "tiny": ("segoeui.ttf", 10)}.items()}
+        self.F = {k: TextFont(n, px, S, bold=b) for k, (n, px, b) in self._font_spec.items()}
         self._ifonts = {}
         self.pages = ["main"]
         self.scroll = 0.0
@@ -4850,6 +4993,13 @@ class MenuPanel:
             fn()
         return go
 
+    def _restyle(self):
+        """Tasarım dili değişince menü de yeni yazı tipi / köşelerle çizilsin."""
+        S = self.S
+        self.F = {k: TextFont(n, px, S, bold=b) for k, (n, px, b) in self._font_spec.items()}
+        self._bg_key = None
+        self._sw = {}
+
     def _load_devices(self):
         self.devices = None
         web = self.app.web
@@ -4930,6 +5080,9 @@ class MenuPanel:
         out = [{"t": "title", "label": title}]
         if page == "look":
             out += [
+                {"t": "seg", "id": "s_ui", "label": T("m_ui"), "value": c["ui"],
+                 "options": [("material", "Material You"), ("shadcn", "shadcn/ui")],
+                 "set": lambda v: (app._set_ui(v), self._restyle())},
                 {"t": "seg", "id": "s_theme", "label": T("m_theme"), "value": c["theme"],
                  "options": [("system", T("th_system")), ("dark", T("th_dark")),
                              ("light", T("th_light"))], "set": app._set_theme},
@@ -5167,12 +5320,20 @@ class MenuPanel:
                     sel = val == it["value"]
                     sid = f'{iid}:{i}'
                     if sel:
-                        rr(content, X(sx0 + 3), X(sy0 + 3), X(sx0 + sw - 3), X(sy1 - 3), X(13),
-                           P["secondary_container"])
+                        # shadcn Tabs: seçili sekme zemin renginde + ince kenarlık
+                        if STYLE["shad"]:
+                            rr(content, X(sx0 + 3), X(sy0 + 3), X(sx0 + sw - 3), X(sy1 - 3),
+                               X(13), P["border"])
+                            rr(content, X(sx0 + 3) + 1, X(sy0 + 3) + 1, X(sx0 + sw - 3) - 1,
+                               X(sy1 - 3) - 1, X(13), P["surface"])
+                        else:
+                            rr(content, X(sx0 + 3), X(sy0 + 3), X(sx0 + sw - 3), X(sy1 - 3),
+                               X(13), P["secondary_container"])
                     elif hov == sid and not dis:
                         rr(content, X(sx0 + 3), X(sy0 + 3), X(sx0 + sw - 3), X(sy1 - 3), X(13),
                            P["on_surface"], alpha=20)
-                    col = (P["on_secondary_container"] if sel else P["on_surface"]) \
+                    col = (P["on_secondary_container"] if sel else
+                           (P["on_surface_variant"] if STYLE["shad"] else P["on_surface"])) \
                         if not dis else P["outline"]
                     d.text((X(sx0 + sw / 2), X((sy0 + sy1) / 2)),
                            fit_text(lbl, F["segb" if sel else "seg"], X(sw - 8)),
@@ -5219,7 +5380,11 @@ class MenuPanel:
                                (0, 0, 0, 0))
             rr(shadow, X(M), X(M + 3), X(M + PW), X(M + vh + 3), X(18), (0, 0, 0), alpha=110)
             bg.alpha_composite(shadow.filter(ImageFilter.GaussianBlur(X(7))))
-            rr(bg, X(M), X(M), X(M + PW), X(M + vh), X(18), P["surface_high"])
+            if STYLE["shad"]:  # shadcn popover: kenarlık + düz zemin
+                rr(bg, X(M), X(M), X(M + PW), X(M + vh), X(18), P["border"])
+                rr(bg, X(M) + 1, X(M) + 1, X(M + PW) - 1, X(M + vh) - 1, X(18), P["surface"])
+            else:
+                rr(bg, X(M), X(M), X(M + PW), X(M + vh), X(18), P["surface_high"])
             self._bg, self._bg_key = bg, sk
         canvas = self._bg.copy()
         part = content.crop((0, round(X(self.scroll)), content.width,

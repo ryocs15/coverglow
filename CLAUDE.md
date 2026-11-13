@@ -31,6 +31,11 @@ Kullanıcıyla Türkçe konuş.
 - **Renkler:** albüm kapağından Material You paleti (`self.pal`). Anahtarlar: primary, on_primary,
   primary_container, on_primary_container, secondary_container, on_secondary_container, surface,
   surface_high, surface_highest, on_surface, on_surface_variant, outline. Sabit renk kullanma.
+- **Tasarım dili:** `cfg["ui"]` = `material` / `shadcn`. Global `STYLE` + `set_style()`: shadcn'de
+  `rr()` köşeleri 10 px ile sınırlar ve düğme boyutundaki daireleri köşeli kareye çevirir; `ui_font()`
+  Segoe yerine `fonts/` içindeki Geist'i (OFL, github.com/vercel/geist-font) kullanır. shadcn renkleri
+  `SHADCN_ZINC` (github.com/shadcn-ui/ui `apps/v4/registry/themes.ts`, OKLCH) → `build_shadcn()`.
+  shadcn paletinde ek olarak `border` anahtarı var (Material paletinde de tanımlı).
 - **Dil:** `STRINGS["tr"]` ve `STRINGS["en"]`. Her yeni metni iki dile de ekle, `T("anahtar")` ile kullan.
 - **Ayarlar:** `config.json` (`App.__init__` içinde `cfg.setdefault` ile varsayılan ver). Exe çalışırken
   dosyalar `dist\` klasöründedir: config.json, stats.json (canlı istatistik), stats_import.json (içe
