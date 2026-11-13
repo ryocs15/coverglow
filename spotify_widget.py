@@ -2493,17 +2493,30 @@ class App:
 
     # ---------------- mini mod
     def _toggle_mini(self):
+        def change():
+            self.mini = not self.mini
+            self.cfg["mini"] = self.mini
+            self.cfg.save()
+            self.hover = None
+            self._apply_scale()
+        self._transition(change)
+
+    def _transition(self, change, dur=None):
+        """Görünüm değişikliğini (mini, sekme, liste aç/kapa, dönem) animasyonla yap: kart boyu
+        sabit kenardan eskiden yeniye gider, eski ve yeni görünüm birbirine karışır.
+        change(): durumu değiştiren fonksiyon. Ara kareler hazır iki görüntüden üretilir."""
         if self._morph:
             self._finish_morph()
         old, old_h = getattr(self, "_frame", None), getattr(self, "_shown_h", None)
-        self.mini = not self.mini
-        self.cfg["mini"] = self.mini
-        self.cfg.save()
-        self.hover = None
+        was_mini = self.mini
         self._morph = "pending" if old is not None and old_h else None  # yeni kareyi basma
-        self._apply_scale()
+        change()
+        self.base_key = None
         self._render_all()
         if self._morph != "pending":
+            return
+        if self._frame is old:  # hiçbir şey değişmedi
+            self._morph = None
             return
         new_h = self._shown_h
         a = self._anchor
@@ -2517,16 +2530,19 @@ class App:
         cap = STYLE["r"] if STYLE["shad"] else 1e9
         self._morph = {"t0": time.monotonic(), "old": placed[0], "new": placed[1],
                        "oh": old_h, "nh": new_h, "H": H, "bottom": a["bottom"],
-                       "r0": min(cap, rad(not self.mini)), "r1": min(cap, rad(self.mini))}
+                       "r0": min(cap, rad(was_mini)), "r1": min(cap, rad(self.mini)),
+                       "dur": dur or (self.MORPH_S if was_mini != self.mini else 0.2)}
         self._morph_step()
 
-    MORPH_S = 0.26  # mini ↔ normal geçiş süresi
+    MORPH_S = 0.26  # mini ↔ normal geçiş süresi (kart içi değişiklikler 0,2 sn)
+    # tıklanınca animasyonla değişen eylemler (sekme, liste aç/kapa, istatistik dönemi / listesi)
+    ANIMATED = ("tab_", "qcollapse", "sp_", "sl_", "sup", "sb")
 
     def _morph_step(self):
         """Geçiş karesi: kart boyu eskiden yeniye büyür/küçülür (sabit kenardan), iki görünüm
         birbirine karışır. Bitince son kareyi normal yoldan bas."""
         m = self._morph
-        t = min(1.0, (time.monotonic() - m["t0"]) / self.MORPH_S)
+        t = min(1.0, (time.monotonic() - m["t0"]) / m["dur"])
         e = 1 - (1 - t) ** 3
         H, w = m["H"], self.WP
         h = m["oh"] + (m["nh"] - m["oh"]) * e
@@ -4606,7 +4622,10 @@ class App:
             h = self._hit(x, y)
             p, self.pressed = self.pressed, None
             if h == p:
-                self._action(p)
+                if p.startswith(self.ANIMATED) and not self.mini:
+                    self._transition(lambda: self._action(p))
+                else:
+                    self._action(p)
         elif self.win_drag:
             self.win_drag = None
             self.cfg["x"], self.cfg["y"] = self._win_pos()
@@ -5143,19 +5162,37 @@ class MenuPanel:
             self.close()
 
     def _open_page(self, page):
-        self.pages.append(page)
-        self.scroll = 0.0
-        self.hover = None
-        if page == "devices":
-            self._load_devices()
-        self.render()
+        def change():
+            self.pages.append(page)
+            if page == "devices":
+                self._load_devices()
+        self._page_fade(change)
 
     def _go_back(self):
         if len(self.pages) > 1:
-            self.pages.pop()
+            self._page_fade(self.pages.pop)
+
+    def _page_fade(self, change, down=(170, 95), up=(165, 220, 255)):
+        """Sayfa geçişi: kısa sol → yeni sayfayı (soluk hâlde, taşımayla birlikte) çiz → belir.
+        Sadece pencere saydamlığı değişir; kare başına yeniden çizim yok."""
+        def step(seq, i, then):
+            if self._closing:
+                return
+            if i < len(seq):
+                self.surface.alpha = seq[i]
+                self.surface._commit(None)
+                self.top.after(14, lambda: step(seq, i + 1, then))
+            elif then:
+                then()
+
+        def swap():
+            change()
             self.scroll = 0.0
             self.hover = None
             self.render()
+            step(up, 0, None)
+
+        step(down, 0, swap)
 
     def _then_close(self, fn):
         """İşlemi yap ve menüyü kapat (pencere açan / tek seferlik işlemler)."""
@@ -5573,8 +5610,7 @@ class MenuPanel:
                X(1.5), P["on_surface"], alpha=70)
         self.hits = hits
         self.vh = vh
-        self.surface.full(canvas)
-        self._place(vh, place)
+        self.surface.full(canvas, pos=self._place(vh, place))
 
     @staticmethod
     def _switch(img, x, cy, on, dis, P, S):
@@ -5617,7 +5653,7 @@ class MenuPanel:
         x = max(wa.left - round(M * S), min(x, wa.right - w + round(M * S)))
         y = max(wa.top - round(M * S), min(y, wa.bottom - h + round(M * S)))
         self.pos = [x, y]
-        move_window(self.hwnd, x, y)
+        return x, y   # taşıma çizimle aynı çağrıda yapılır (surface.full pos=)
 
     # -- olaylar
     def _hit(self, e):
