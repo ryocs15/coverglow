@@ -1377,6 +1377,7 @@ class MediaWorker:
         self.session = None
         self._last_track = None
         self._wake = None
+        self.fast_until = 0.0   # bu zamana kadar durumu 0,1 sn'de bir oku
         threading.Thread(target=self._run, daemon=True).start()
 
     def _run(self):
@@ -1454,8 +1455,10 @@ class MediaWorker:
                 with self.lock:
                     self.state = {"ok": False}
                 self.manager = None
+            # komuttan hemen sonra (şarkı atlama vb.) durumu sık oku: değişiklik hemen görünsün
+            fast = time.monotonic() < self.fast_until
             try:
-                await asyncio.wait_for(self._wake.wait(), 1.0)
+                await asyncio.wait_for(self._wake.wait(), 0.1 if fast else 1.0)
             except asyncio.TimeoutError:
                 pass
             self._wake.clear()
@@ -1467,6 +1470,10 @@ class MediaWorker:
         return st
 
     def command(self, name, arg=None):
+        # atlama sayısı kadar uzat: her atlama ~0,3 sn sürüyor
+        n = arg if name == "skip_n" and isinstance(arg, int) else 1
+        self.fast_until = time.monotonic() + 2.5 + 0.3 * n
+
         async def go():
             s = self.session
             if s is None:
@@ -1659,6 +1666,7 @@ class SpotifyWeb:
         self.auth_status = None
         self.auth_error = False
         self.net_down = False   # bağlantı kesintisi sürüyor mu (log tekrarını önler)
+        self._again = 0.0       # şarkı değişiminden sonra ikinci yenileme zamanı
         self.wake = threading.Event()
         threading.Thread(target=self._run, daemon=True).start()
 
@@ -1884,13 +1892,38 @@ class SpotifyWeb:
             else:
                 sub = ", ".join(a.get("name", "") for a in it.get("artists") or [])
                 imgs = (it.get("album") or {}).get("images") or []
-            url = min(imgs, key=lambda i: i.get("width") or 9999)["url"] if imgs else None
-            self._thumb(url)
+            # küçük kapak (64 px) liste için; seçilince anında gösterilecek büyük kapak için
+            # 300 px'lik olanı tercih et
+            imgs = sorted(imgs, key=lambda i: i.get("width") or 9999)
+            url = next((i["url"] for i in imgs if (i.get("width") or 0) >= 200), None) \
+                or (imgs[-1]["url"] if imgs else None)
             items.append({"id": it.get("id"), "name": it.get("name", ""), "sub": sub,
                           "url": url, "dur": (it.get("duration_ms") or 0) / 1000})
         old = [i["id"] for i in self.queue] if self.queue else None
         if old != [i["id"] for i in items] or self.error:
-            self._set(items, None)
+            self._set(items, None)  # kapakları beklemeden listeyi göster
+        missing = [i["url"] for i in items if i["url"] and i["url"] not in self.thumbs]
+        if missing:
+            threading.Thread(target=self._load_thumbs, args=(missing,), daemon=True).start()
+
+    def _load_thumbs(self, urls):
+        """Kapakları paralel indir; her biri gelince listeyi yeniden çizdir."""
+        from concurrent.futures import ThreadPoolExecutor
+
+        def one(u):
+            self._thumb(u)
+            with self.lock:
+                self.version += 1
+
+        with ThreadPoolExecutor(max_workers=4) as ex:
+            list(ex.map(one, urls))
+
+    def pop_queue(self, n):
+        """Sıradakilerden şarkı seçilince atlanan şarkıları listeden hemen çıkar."""
+        with self.lock:
+            if self.queue:
+                self.queue = self.queue[n:]
+                self.version += 1
 
     def _run(self):
         last = 0.0
@@ -1900,9 +1933,13 @@ class SpotifyWeb:
             if not self.connected:
                 continue
             interval = 8 if self.playing else 30
-            if woke or time.time() - last > interval:
+            again = self._again and time.time() >= self._again
+            if woke or again or time.time() - last > interval:
                 if woke:
-                    time.sleep(0.8)  # Spotify'ın sırayı güncellemesine izin ver
+                    time.sleep(0.45)  # Spotify'ın sırayı güncellemesine izin ver
+                    self._again = time.time() + 2.5  # atlamalar bitince bir kez daha bak
+                else:
+                    self._again = 0.0
                 last = time.time()
                 try:
                     self._fetch()
@@ -2108,6 +2145,7 @@ class App:
         self.last_t = time.monotonic()
         self.last_theme_check = 0.0
         self.st = {"ok": False}
+        self.pending = None   # sıradakilerden seçilen, Spotify'ın henüz onaylamadığı şarkı
         self.last = None
         self._last_saved = 0.0
         self._load_last()
@@ -2488,8 +2526,13 @@ class App:
             log("son şarkı kaydedilemedi:", repr(e))
 
     def _view(self):
-        """Ekranda gösterilecek şarkı: çalan şarkı ya da (Spotify kapalıysa) son çalınan."""
+        """Ekranda gösterilecek şarkı: çalan şarkı ya da (Spotify kapalıysa) son çalınan.
+        Sıradakilerden şarkı seçilince Spotify onaylayana kadar seçilen şarkı gösterilir."""
         if self.st.get("ok"):
+            p = self.pending
+            if p:
+                return dict(self.st, title=p["title"], artist=p["artist"], album="",
+                            playing=True)
             return self.st
         if self.last:
             return dict(self.last, ok=False, offline=True, playing=False)
@@ -2501,6 +2544,18 @@ class App:
         self.last_t = now
 
         st = self.media.snapshot()
+        p = self.pending
+        if p:
+            if st.get("ok") and st.get("title") == p["title"]:
+                self.pending = None  # Spotify seçilen şarkıya geçti
+            elif now > p["until"] or not st.get("ok"):
+                self.pending = None  # eşleşmedi / zaman aşımı: gerçek duruma dön
+                if st.get("ok"):
+                    st = dict(st, art_changed=True)  # gerçek kapağı geri getir
+            else:
+                # atlama sürerken aradaki şarkıları gösterme (kapak / geçmiş / bildirim yok)
+                st = dict(st)
+                st.pop("art_changed", None)
         if st.get("art_changed"):
             self._on_new_art(st.get("art"))
         self.st = st
@@ -2510,7 +2565,7 @@ class App:
             self.lyrics.request(st.get("title"), st.get("artist"), st.get("album"), st.get("end"))
         self._audio_tick(now, st, playing)
         self._alarm_tick(st)
-        if st.get("ok"):
+        if st.get("ok") and not self.pending:  # atlama sürerken aradaki şarkılar için yenileme
             self.web.notify((st["title"], st["artist"]), playing)
             if st.get("title") and (st.get("art_changed") or self.last is None
                                     or self.last.get("title") != st["title"]
@@ -2650,14 +2705,18 @@ class App:
                 img.load()
             except Exception:
                 img = None
+        self._set_art(img)
+
+    def _set_art(self, img):
+        """Kapağı (PIL görüntüsü ya da None) uygula: küçük kopyalar + renk paleti."""
+        self.art_version += 1
         if img is not None:
             self.art_src = img.convert("RGB")
             self.seed = seed_from_image(img)
         else:
             self.art_src = None
-        self._make_art()
-        if img is None:
             self.seed = DEFAULT_SEED
+        self._make_art()
         self._start_palette(self._scheme())
 
     def _scheme(self):
@@ -4492,8 +4551,20 @@ class App:
                 self.media.command("seek", lines[i][0])
         elif a.startswith("q"):
             n = int(a[1:]) + 1
+            _c, queue, _e, _v = self.web.snapshot()
+            if queue and n <= len(queue):  # seçilen şarkıyı Spotify onaylamadan hemen göster
+                it = queue[n - 1]
+                self.pending = {"title": it["name"], "artist": it["sub"], "dur": it.get("dur") or 0,
+                                "until": time.monotonic() + 3.0 + 0.4 * n}
+                th = self.web.thumbs.get(it.get("url"))
+                if th is not None:
+                    self._set_art(th)
+                self.seek_hold = (0.0, time.monotonic())
+                self.web.pop_queue(n)  # listeden atlanan şarkıları hemen çıkar
+                self.base_key = None
             self.media.command("skip_n", n)
-            self.web.refresh_now()
+            # atlamalar bitince sırayı yenile (arada eski listeyi gösterip titremesin)
+            self.root.after(int(300 * n), self.web.refresh_now)
 
     # ---------------- menü (kendi çizdiğimiz Material menü: MenuPanel)
     def _on_menu(self, e):
