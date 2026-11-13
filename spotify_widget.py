@@ -2536,7 +2536,7 @@ class App:
 
     MORPH_S = 0.26  # mini ↔ normal geçiş süresi (kart içi değişiklikler 0,2 sn)
     # tıklanınca animasyonla değişen eylemler (sekme, liste aç/kapa, istatistik dönemi / listesi)
-    ANIMATED = ("tab_", "qcollapse", "sp_", "sl_", "sup", "sb")
+    ANIMATED = ("tab_", "q", "sp_", "sl_", "sup", "sb")  # "q": liste aç/kapa + sıradakinden şarkı
 
     def _morph_step(self):
         """Geçiş karesi: kart boyu eskiden yeniye büyür/küçülür (sabit kenardan), iki görünüm
@@ -2659,7 +2659,10 @@ class App:
                 st = dict(st)
                 st.pop("art_changed", None)
         if st.get("art_changed"):
-            self._on_new_art(st.get("art"))
+            def change(st=st):
+                self.st = st
+                self._on_new_art(st.get("art"))
+            self._transition(change, dur=0.35)  # şarkı değişimi: eski görünümden yeniye geçiş
         self.st = st
         playing = self._playing()
         self._stat_tick(now, st, playing)
@@ -2823,7 +2826,11 @@ class App:
             self.art_src = None
             self.seed = DEFAULT_SEED
         self._make_art()
-        self._start_palette(self._scheme())
+        # renkler hemen yeni değerine geçer; yumuşak geçişi _transition'ın çapraz geçişi yapar
+        # (eski yarım saniyelik renk animasyonu her karede baştan çizim gerektiriyordu)
+        self.pal = self.pal_from = self.pal_to = self._scheme()
+        self.pal_t = 1.0
+        self.pal_version += 1
 
     def _scheme(self):
         if self.cfg.get("ui") == "shadcn":
