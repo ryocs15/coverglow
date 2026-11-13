@@ -682,31 +682,43 @@ def monitor_info(hwnd):
     return mi
 
 
-def fullscreen_app(own=()):
-    """Ön plandaki pencere bir monitörü tamamen kaplıyorsa (oyun, video, sunum)
-    o monitörün dikdörtgenini döndürür; değilse None."""
+def fullscreen_info(own=()):
+    """(monitör dikdörtgeni ya da None, açıklama). Tam ekran sayılır:
+    - Windows 'tam ekran uygulama çalışıyor' diyorsa (QUNS_BUSY=2, D3D tam ekran=3, sunum=4),
+    - ya da ön plandaki pencere monitörün en az %97'sini kaplıyorsa (1 px küçük açılan
+      kenarlıksız oyunlar dahil)."""
     try:
         state = ctypes.c_int(0)
         ctypes.windll.shell32.SHQueryUserNotificationState(ctypes.byref(state))
         hwnd = user32.GetForegroundWindow()
-        if not hwnd or hwnd in own:
-            return None
         cls = ctypes.create_unicode_buffer(64)
-        user32.GetClassNameW(hwnd, cls, 64)
-        if cls.value in _SHELL_CLASSES:
-            return None
-        mi = monitor_info(hwnd)
-        m = mi.rcMonitor
-        if state.value == 3:  # QUNS_RUNNING_D3D_FULL_SCREEN (özel tam ekran)
-            return m
+        if hwnd:
+            user32.GetClassNameW(hwnd, cls, 64)
+        desc = f"on={cls.value or '-'} durum={state.value}"
+        if not hwnd or hwnd in own or cls.value in _SHELL_CLASSES:
+            # ön planda kendimiz / masaüstü var; Windows yine de tam ekran diyorsa birincil monitör
+            if state.value in (3, 4):
+                return monitor_info(user32.GetDesktopWindow()).rcMonitor, desc + " (sistem)"
+            return None, desc
+        m = monitor_info(hwnd).rcMonitor
+        if state.value in (2, 3, 4):
+            return m, desc
         rc = wintypes.RECT()
         user32.GetWindowRect(hwnd, ctypes.byref(rc))
-        if rc.left <= m.left and rc.top <= m.top and rc.right >= m.right \
-                and rc.bottom >= m.bottom:
-            return m
-    except Exception:
-        pass
-    return None
+        ix = max(0, min(rc.right, m.right) - max(rc.left, m.left))
+        iy = max(0, min(rc.bottom, m.bottom) - max(rc.top, m.top))
+        area = (m.right - m.left) * (m.bottom - m.top)
+        desc += f" kaplama=%{round(100 * ix * iy / max(1, area))}"
+        if ix * iy >= 0.97 * area:
+            return m, desc
+        return None, desc
+    except Exception as e:  # noqa: BLE001
+        return None, f"hata {e!r}"
+
+
+def fullscreen_app(own=()):
+    """Ön plandaki pencere tam ekransa (oyun, video, sunum) o monitörün dikdörtgeni; değilse None."""
+    return fullscreen_info(own)[0]
 
 
 def _spotify_exe():
@@ -2420,9 +2432,13 @@ class App:
                     self._toast_key = key
                 elif key != self._toast_key:
                     self._toast_key = key
-                    fs = fullscreen_app((self.hwnd, self.toast.hwnd))
-                    if self.cfg["notify"] and (fs is not None or (
-                            self.cfg["mode"] == "desktop" and not self.inside)):
+                    fs, why = fullscreen_info((self.hwnd, self.toast.hwnd))
+                    show = self.cfg["notify"] and (fs is not None or (
+                        self.cfg["mode"] == "desktop" and not self.inside))
+                    if fs is not None or self.cfg.get("debug_toast"):
+                        # oyunda görünmezse sebebini bulabilmek için kısa tanı satırı
+                        log(f"bildirim: tam_ekran={fs is not None} gosterildi={bool(show)} {why}")
+                    if show:
                         self.toast.show(st, fs)
 
         # klavye kısayolları
@@ -4498,6 +4514,7 @@ class Toast:
     def _present(self, img, w, h, fs, hold):
         S = self.app.S
         self.hold = hold
+        self._z_logged = False
         self.fs = fs is not None
         ex = user32.GetWindowLongPtrW(self.hwnd, GWL_EXSTYLE)
         ex = (ex | WS_EX_TRANSPARENT) if self.fs else (ex & ~WS_EX_TRANSPARENT)
@@ -4554,8 +4571,25 @@ class Toast:
             self.hide()
             return
         user32.SetWindowPos(self.hwnd, HWND_TOPMOST, 0, 0, 0, 0,
-                            SWP_NOSIZE | SWP_NOMOVE | SWP_NOACTIVATE)
-        self._job = self.top.after(250, self._hold)
+                            SWP_NOSIZE | SWP_NOMOVE | SWP_NOACTIVATE | 0x0040)  # SHOWWINDOW
+        if self.fs and not getattr(self, "_z_logged", False):
+            self._z_logged = True
+            self._log_z()
+        # tam ekranda oyun kendini sık sık öne alabilir: daha sık yeniden üste çık
+        self._job = self.top.after(100 if self.fs else 250, self._hold)
+
+    def _log_z(self):
+        """Tanı: bildirim, ön plandaki tam ekran pencerenin üstünde mi?"""
+        fg = user32.GetForegroundWindow()
+        h, n = user32.GetTopWindow(None), 0
+        while h and n < 3000:
+            if h == self.hwnd:
+                log("bildirim z-sırası: oyunun üstünde")
+                return
+            if h == fg:
+                log("bildirim z-sırası: oyunun ALTINDA kaldı")
+                return
+            h, n = user32.GetWindow(h, 2), n + 1
 
 
 # ------------------------------------------------------------------ bağlantı penceresi
