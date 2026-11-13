@@ -103,7 +103,7 @@ CX = W / 2
 IC_PLAY, IC_PAUSE = "\uF5B0", "\uE769"
 IC_PREV, IC_NEXT = "\uE892", "\uE893"
 IC_SHUFFLE, IC_REPEAT, IC_REPEAT_ONE = "\uE8B1", "\uE8EE", "\uE8ED"
-IC_MUSIC, IC_OPEN = "\uE8D6", "\uE8A7"
+IC_MUSIC, IC_OPEN, IC_INFO = "\uE8D6", "\uE8A7", "\uE946"
 IC_DOWN, IC_UP = "\uE70D", "\uE70E"
 IC_CAL, IC_VOL, IC_MUTE, IC_ALARM = "\uE787", "\uE767", "\uE74F", "\uEA8F"
 
@@ -190,6 +190,10 @@ STRINGS = {
         "sleep_left": "{m} dk kaldı", "seg_desktop": "Masaüstü", "seg_top": "Her zaman üstte",
         "m_rows_s": "Listedeki satır", "m_idle_s": "Fare uzaktayken", "m_reconnect": "Yeniden bağla",
         "hk_list": "KISAYOLLAR", "m_fps": "Animasyon akıcılığı", "m_ui": "Tasarım",
+        "sd_dur": "Süre", "sd_liked": "Beğeni", "sd_yours": "SENİN DİNLEMEN",
+        "sd_open": "Spotify'da aç", "sd_first": "Bu şarkıyı ilk kez dinliyorsun 🎧",
+        "sd_album": "Albüm", "sd_single": "Single", "sd_comp": "Derleme", "sd_type": "Tür",
+        "sd_release": "Çıkış", "sd_track": "Sıra", "sd_disc": "Disk", "sd_explicit": "Açık içerik",
         "fps_30": "30 fps · tasarruflu", "fps_60": "60 fps · akıcı",
         "m_accent": "Renk", "ac_auto": "Albüm kapağından", "ac_green": "Yeşil",
         "ac_blue": "Mavi", "ac_purple": "Mor", "ac_pink": "Pembe", "ac_red": "Kırmızı",
@@ -316,6 +320,10 @@ STRINGS = {
         "sleep_left": "{m} min left", "seg_desktop": "Desktop", "seg_top": "Always on top",
         "m_rows_s": "Rows in list", "m_idle_s": "When mouse is away", "m_reconnect": "Reconnect",
         "hk_list": "SHORTCUTS", "m_fps": "Animation smoothness", "m_ui": "Design",
+        "sd_dur": "Duration", "sd_liked": "Liked", "sd_yours": "YOUR LISTENING",
+        "sd_open": "Open in Spotify", "sd_first": "First time listening to this one 🎧",
+        "sd_album": "Album", "sd_single": "Single", "sd_comp": "Compilation", "sd_type": "Type",
+        "sd_release": "Released", "sd_track": "Track", "sd_disc": "Disc", "sd_explicit": "Explicit",
         "fps_30": "30 fps · saver", "fps_60": "60 fps · smooth",
         "m_accent": "Color", "ac_auto": "From album art", "ac_green": "Green",
         "ac_blue": "Blue", "ac_purple": "Purple", "ac_pink": "Pink", "ac_red": "Red",
@@ -3756,7 +3764,8 @@ class App:
         if hov == "art" and self._vol_shown() is None:
             rr(img, X(ax), X(ay), X(ax + MINI_ART), X(ay + MINI_ART), X(16), (0, 0, 0),
                alpha=110)
-            d.text((X(ax + MINI_ART / 2), X(ay + MINI_ART / 2)), IC_OPEN,
+            d.text((X(ax + MINI_ART / 2), X(ay + MINI_ART / 2)),
+                   IC_INFO if self.st.get("ok") else IC_OPEN,
                    font=self.icon_font(18), fill=(255, 255, 255, 255), anchor="mm")
         self._draw_volume(img, d, ax, ay, MINI_ART, 16)
         hits.append(("art", ax, ay, ax + MINI_ART, ay + MINI_ART))
@@ -3840,7 +3849,7 @@ class App:
             icon(ax + asz / 2, ay + asz / 2, IC_MUSIC, 40, P["on_surface_variant"])
         if hov == "art" and self._vol_shown() is None:
             rr(img, X(ax), X(ay), X(ax + asz), X(ay + asz), X(20), (0, 0, 0), alpha=110)
-            icon(ax + asz / 2, ay + asz / 2, IC_OPEN, 26, (255, 255, 255))
+            icon(ax + asz / 2, ay + asz / 2, IC_INFO if ok else IC_OPEN, 26, (255, 255, 255))
         self._draw_volume(img, d, ax, ay, asz, 20)
         hits.append(("art", ax, ay, ax + asz, ay + asz))
 
@@ -4559,7 +4568,10 @@ class App:
             nxt = {0: 2, 2: 1, 1: 0}.get(st.get("repeat") or 0, 0)  # kapalı → liste → şarkı
             self.media.command("repeat", nxt)
         elif a == "art":
-            open_spotify()
+            if st.get("ok") and st.get("title"):
+                SongDialog(self)   # çalan şarkının özellikleri
+            else:
+                open_spotify()     # Spotify kapalı: aç
         elif a in ("artist", "album"):
             self._open_entity(a)
         elif a == "like":
@@ -5197,7 +5209,7 @@ class MenuPanel:
                     ("q_share", MI["share"], T("q_share"), False,
                      lambda: self._open_page("share")),
                     ("q_open", MI["open"], T("q_open"), False,
-                     self._then_close(lambda: app._action("art")))]},
+                     self._then_close(open_spotify))]},
                 {"t": "sep"},
                 {"t": "nav", "id": "p_look", "icon": MI["look"], "label": T("mn_appearance"),
                  "value": th.get(c["theme"], ""), "page": "look"},
@@ -5916,6 +5928,208 @@ class RecapWindow(_Dialog):
         if p:
             self.img.save(p)
             self.status.config(text="✓ " + os.path.basename(p))
+
+
+class SongDialog(_Dialog):
+    """Çalan şarkının özellikleri: kapak, sanatçılar, albüm, tarih, süre, sıra + senin dinlemen."""
+
+    def __init__(self, app):
+        st = app._view()
+        if not st.get("title"):
+            return
+        if not self._setup(app, st["title"]):
+            return
+        from PIL import ImageTk
+        self.st = st
+        t, dpi = self.top, app.dpi
+        self.web = app.web
+        cur = self.web.current
+        self.tid = cur.get("id") if cur and cur.get("name") == st["title"] else None
+        body = tk.Frame(t, bg=self.bg)
+        body.pack(fill="both")
+        # kapak
+        sz = round(210 * dpi)
+        self._art_lbl = tk.Label(body, bg=self.bg)
+        self._art_lbl.pack(side="left", anchor="n", padx=(0, 18))
+        self._set_art(app.art_src, sz)
+        # bilgiler
+        info = tk.Frame(body, bg=self.bg)
+        info.pack(side="left", fill="both", anchor="n")
+        self.info = info
+        tk.Label(info, text=st["title"], bg=self.bg, fg=self.fg, justify="left", anchor="w",
+                 wraplength=round(330 * dpi), font=("Segoe UI Semibold", 16)).pack(anchor="w")
+        self.artists = tk.Frame(info, bg=self.bg)
+        self.artists.pack(anchor="w", pady=(2, 0))
+        self._link(self.artists, st.get("artist") or T("unknown"),
+                   lambda: app._open_entity("artist"), size=11).pack(side="left")
+        self.album_lbl = self._link(info, st.get("album") or "", lambda: app._open_entity("album"),
+                                    size=10, dim=True)
+        self.album_lbl.pack(anchor="w", pady=(2, 10))
+        self.meta = tk.Frame(info, bg=self.bg)
+        self.meta.pack(anchor="w", fill="x")
+        self._rows = 0
+        pos, end = app._position()
+        if end:
+            self._meta(T("sd_dur"), fmt_time(end))
+        liked = self.web.liked_state(st["title"])
+        if liked is not None:
+            self._meta(T("sd_liked"), "♥ " + T("osd_liked") if liked else "—")
+        # senin dinlemen (geçmişten)
+        tk.Frame(t, bg=self.field, height=1).pack(fill="x", pady=(16, 10))
+        tk.Label(t, text=T("sd_yours"), bg=self.bg, fg=self.acc,
+                 font=("Segoe UI Semibold", 9)).pack(anchor="w")
+        self.mine = tk.Label(t, text=T("loading"), bg=self.bg, fg=self.fg, justify="left",
+                             anchor="w", font=("Segoe UI", 10))
+        self.mine.pack(anchor="w", pady=(4, 0))
+        row = tk.Frame(t, bg=self.bg)
+        row.pack(fill="x", pady=(14, 0))
+        self.status = tk.Label(row, text="", bg=self.bg, fg=self.dim, font=("Segoe UI", 9))
+        self.status.pack(side="left")
+        self.btn(row, T("sd_open"), self._open, primary=True).pack(side="right")
+        self.btn(row, T("sh_link"), self._copy).pack(side="right", padx=8)
+        t.focus_force()
+        t.after(30, self._fill_mine)
+        if self.tid and self.web.connected:
+            self._load_track()
+
+    # -- yardımcılar
+    def _set_art(self, img, sz):
+        from PIL import ImageTk
+        if img is None:
+            ph = Image.new("RGB", (sz, sz), self.app.pal["surface_highest"])
+            img = ph
+        self._ph = ImageTk.PhotoImage(rounded_image(img, sz, 14 * self.app.dpi))
+        self._art_lbl.config(image=self._ph)
+
+    def _link(self, parent, text, cmd, size=10, dim=False):
+        lbl = tk.Label(parent, text=text, bg=self.bg, fg=self.dim if dim else self.fg,
+                       cursor="hand2", font=("Segoe UI", size), justify="left",
+                       wraplength=round(330 * self.app.dpi))
+        lbl.bind("<Button-1>", lambda _e: cmd())
+        lbl.bind("<Enter>", lambda _e: lbl.config(fg=self.acc))
+        lbl.bind("<Leave>", lambda _e: lbl.config(fg=self.dim if dim else self.fg))
+        return lbl
+
+    def _meta(self, key, val):
+        tk.Label(self.meta, text=key, bg=self.bg, fg=self.dim, font=("Segoe UI", 9),
+                 anchor="w").grid(row=self._rows, column=0, sticky="w", pady=1)
+        tk.Label(self.meta, text=val, bg=self.bg, fg=self.fg, font=("Segoe UI", 10),
+                 anchor="w").grid(row=self._rows, column=1, sticky="w", padx=(14, 0), pady=1)
+        self._rows += 1
+
+    def _fill_mine(self):
+        app, st = self.app, self.st
+        artist1 = (st.get("artist") or "").split(", ")[0].strip()
+        tracks, _a = app._history_index()
+        e = tracks.get(f'{st["title"]}\t{artist1}')
+        if not e:  # sanatçı adı farklı yazılmış olabilir: başlığa göre ara
+            for k, v in tracks.items():
+                if k.partition("\t")[0] == st["title"]:
+                    e = v
+                    break
+        if not e:
+            self.mine.config(text=T("sd_first"))
+            return
+        best = max(e["years"].items(), key=lambda kv: kv[1])[0] if e["years"] else "–"
+        self.mine.config(text=T("hs_detail", name="", dur=fmt_dur(e["sec"]),
+                                plays=f'{e["plays"]:,}'.replace(",", "."), days=e["days"],
+                                first=e["first"], last=e["last"], year=best).strip())
+
+    def _load_track(self):
+        res = {}
+
+        def work():
+            try:
+                tr = self.web._api("/tracks/" + self.tid)
+                res["t"] = tr
+                imgs = sorted((tr.get("album") or {}).get("images") or [],
+                              key=lambda i: -(i.get("width") or 0))
+                if imgs:  # en büyük kapak (640 px)
+                    res["img"] = Image.open(io.BytesIO(http_read(imgs[0]["url"], 10))).convert("RGB")
+            except Exception as ex:  # noqa: BLE001
+                res["err"] = ex
+
+        th = threading.Thread(target=work, daemon=True)
+        th.start()
+
+        def wait():
+            if th.is_alive():
+                self.top.after(100, wait)
+                return
+            try:
+                self._apply(res)
+            except tk.TclError:  # pencere kapatıldı
+                pass
+
+        wait()
+
+    def _apply(self, res):
+        tr = res.get("t")
+        if not tr:
+            if res.get("err"):
+                log("şarkı bilgisi alınamadı:", repr(res["err"]))
+            return
+        if res.get("img") is not None:
+            self._set_art(res["img"], round(210 * self.app.dpi))
+        # sanatçılar (her biri tıklanabilir)
+        for w_ in self.artists.winfo_children():
+            w_.destroy()
+        arts = tr.get("artists") or []
+        for i, a in enumerate(arts):
+            uri = a.get("uri")
+            self._link(self.artists, a.get("name", ""),
+                       lambda u=uri: open_spotify(u), size=11).pack(side="left")
+            if i < len(arts) - 1:
+                tk.Label(self.artists, text=", ", bg=self.bg, fg=self.dim,
+                         font=("Segoe UI", 11)).pack(side="left")
+        al = tr.get("album") or {}
+        self.album_lbl.config(text=al.get("name") or "")
+        self.album_lbl.bind("<Button-1>", lambda _e, u=al.get("uri"): open_spotify(u))
+        for w_ in self.meta.winfo_children():
+            w_.destroy()
+        self._rows = 0
+        kind = {"album": T("sd_album"), "single": T("sd_single"),
+                "compilation": T("sd_comp")}.get(al.get("album_type"), "")
+        if kind:
+            self._meta(T("sd_type"), kind)
+        rd = al.get("release_date") or ""
+        if rd:
+            if al.get("release_date_precision") == "day" and len(rd) == 10:
+                months = T("months_full").split()
+                rd = f"{int(rd[8:10])} {months[int(rd[5:7]) - 1]} {rd[:4]}"
+            self._meta(T("sd_release"), rd)
+        if tr.get("duration_ms"):
+            self._meta(T("sd_dur"), fmt_time(tr["duration_ms"] / 1000))
+        if tr.get("track_number"):
+            pos = f'{tr["track_number"]} / {al.get("total_tracks", "?")}'
+            if (tr.get("disc_number") or 1) > 1:
+                pos += f'  ·  {T("sd_disc")} {tr["disc_number"]}'
+            self._meta(T("sd_track"), pos)
+        if tr.get("explicit"):
+            self._meta(T("sd_explicit"), "🅴")
+        liked = self.web.liked_state(self.st["title"])
+        if liked is not None:
+            self._meta(T("sd_liked"), "♥ " + T("osd_liked") if liked else "—")
+        isrc = (tr.get("external_ids") or {}).get("isrc")
+        if isrc:
+            self._meta("ISRC", isrc)
+
+    def _url(self):
+        if self.tid:
+            return "https://open.spotify.com/track/" + self.tid
+        q = f'{self.st.get("title", "")} {self.st.get("artist", "")}'.strip()
+        return "https://open.spotify.com/search/" + urllib.parse.quote(q)
+
+    def _open(self):
+        if self.tid:
+            open_spotify("spotify:track:" + self.tid, self._url())
+        else:
+            self.app._spotify_search(f'{self.st.get("title", "")} {self.st.get("artist", "")}')
+
+    def _copy(self):
+        self.top.clipboard_clear()
+        self.top.clipboard_append(self._url())
+        self.status.config(text=T("sh_link_ok"))
 
 
 class HistoryDialog(_Dialog):
