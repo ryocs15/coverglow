@@ -59,10 +59,6 @@ LAST_ART_PATH = os.path.join(APP_DIR, "last_art.img")
 STATS_PATH = os.path.join(APP_DIR, "stats.json")
 FRAME_MS = 16  # animasyon karesi aralığı (~60 fps)
 LOG_PATH = os.path.join(APP_DIR, "widget.log")
-STARTUP_VBS = os.path.join(
-    os.environ.get("APPDATA", ""),
-    r"Microsoft\Windows\Start Menu\Programs\Startup\SpotifyWidget.vbs",
-)
 FONT_DIR = os.path.join(os.environ.get("WINDIR", r"C:\Windows"), "Fonts")
 
 # pythonw altında stderr yok: hataları dosyaya yaz
@@ -430,7 +426,7 @@ def import_spotify_history(paths):
                     yield from json.load(f)
 
     artists, a_idx, tracks, t_idx, days = [], {}, [], {}, {}
-    n, total, first, last = 0, 0.0, None, None
+    n, total, first, last, seen = 0, 0.0, None, None, set()
     for r in records():
         if not isinstance(r, dict):
             continue
@@ -448,6 +444,11 @@ def import_spotify_history(paths):
                 title = None
         if not title or not artist or when is None or ms <= 0:
             continue  # podcast, sesli kitap, bozuk kayıt
+        # hesap verisi + genişletilmiş geçmiş birlikte seçilirse aynı dinleme iki kez gelir
+        dup = (when.strftime("%Y-%m-%d %H:%M"), title, artist)
+        if dup in seen:
+            continue
+        seen.add(dup)
         local = when.astimezone()
         day = local.date().isoformat()
         sec = ms / 1000.0
@@ -1583,9 +1584,6 @@ class Lyrics:
             # hata aldıysa (ör. internet gitti) bir süre sonra kendiliğinden tekrar dene
             if self.state != "err" or time.monotonic() < getattr(self, "retry_at", 0):
                 return
-            self.key = None
-        if key == self.key:
-            return
         self.key = key
         if key in self.cache:
             self._apply(key, *self.cache[key])
@@ -1802,17 +1800,8 @@ class SpotifyWeb:
         return "user-library-modify" in (self.cfg.get("scopes") or "")
 
     def _library(self, tid, method):
-        """Kütüphane uç noktası; eskisi kaldırılmışsa yeni URI tabanlı uç noktayı dener."""
-        if not getattr(self, "_lib_new", False):
-            try:
-                path = "/me/tracks/contains?ids=" if method == "CHECK" else "/me/tracks?ids="
-                return self._api(path + tid, "GET" if method == "CHECK" else method)
-            except urllib.error.HTTPError as e:
-                # Spotify eski uç noktayı kapattı (403/404/410): yenisine geç ve hatırla
-                if e.code not in (403, 404, 410):
-                    raise
-                self._lib_new = True
-        uri = urllib.parse.quote("spotify:track:" + tid)
+        """Kütüphane uç noktası (eski /me/tracks 403 veriyor, URI tabanlı yenisi kullanılır)."""
+        uri =urllib.parse.quote("spotify:track:" + tid)
         path = "/me/library/contains?uris=" if method == "CHECK" else "/me/library?uris="
         return self._api(path + uri, "GET" if method == "CHECK" else method)
 
@@ -1870,6 +1859,8 @@ class SpotifyWeb:
     def _thumb(self, url):
         if not url or url in self.thumbs:
             return
+        if len(self.thumbs) > 60:  # sınırsız büyümesin; gereken kapak yeniden indirilir
+            self.thumbs.clear()
         try:
             self.thumbs[url] = Image.open(io.BytesIO(http_read(url, timeout=10))).convert("RGB")
         except Exception as e:  # noqa: BLE001
@@ -2516,9 +2507,13 @@ class App:
         old, old_h = getattr(self, "_frame", None), getattr(self, "_shown_h", None)
         was_mini = self.mini
         self._morph = "pending" if old is not None and old_h else None  # yeni kareyi basma
-        change()
-        self.base_key = None
-        self._render_all()
+        try:
+            change()
+            self.base_key = None
+            self._render_all()
+        except Exception:
+            self._morph = None  # takılı "pending" kalırsa hiçbir kare basılmaz
+            raise
         if self._morph != "pending":
             return
         if self._frame is old:  # hiçbir şey değişmedi
@@ -2646,6 +2641,15 @@ class App:
         return self.st
 
     def _tick(self):
+        t0 = time.monotonic()
+        interval = 200
+        try:
+            interval = self._tick_body()
+        finally:  # bir karede hata çıksa da döngü durmasın (hata report_callback_exception'a gider)
+            work = (time.monotonic() - t0) * 1000
+            self.root.after(max(1, int(interval - work)), self._tick)
+
+    def _tick_body(self):
         now = time.monotonic()
         dt = min(0.2, now - self.last_t)
         self.last_t = now
@@ -2802,8 +2806,7 @@ class App:
             interval = 200   # süre / ilerleme güncel kalsın
         else:
             interval = 450   # duraklatılmış ve boşta: daha seyrek kontrol yeter
-        work = (time.monotonic() - now) * 1000
-        self.root.after(max(1, int(interval - work)), self._tick)
+        return interval
 
     def _start_palette(self, target):
         self.pal_from = self.pal
@@ -4816,15 +4819,13 @@ class App:
                 winreg.QueryValueEx(k, "SpotifyWidget")
             return True
         except OSError:
-            return os.path.exists(STARTUP_VBS)  # eski sürümün başlangıç dosyası
+            return False
 
     def _set_startup(self, on):
         """Windows açılışında başlat: HKCU\\...\\Run kaydı (Görev Yöneticisi > Başlangıç'ta görünür)."""
         self.cfg["startup"] = bool(on)
         self.cfg.save()
         try:
-            if os.path.exists(STARTUP_VBS):
-                os.remove(STARTUP_VBS)  # eski VBS yöntemini temizle
             with winreg.OpenKey(winreg.HKEY_CURRENT_USER, self.RUN_KEY, 0,
                                 winreg.KEY_SET_VALUE) as k:
                 if on:
