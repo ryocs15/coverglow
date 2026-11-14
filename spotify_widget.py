@@ -67,12 +67,21 @@ FONT_DIR = os.path.join(os.environ.get("WINDIR", r"C:\Windows"), "Fonts")
 
 # pythonw altında stderr yok: hataları dosyaya yaz
 if sys.stderr is None or sys.stdout is None:
-    _f = open(LOG_PATH, "a", encoding="utf-8", buffering=1)
+    _big = os.path.exists(LOG_PATH) and os.path.getsize(LOG_PATH) > 1_000_000
+    _f = open(LOG_PATH, "w" if _big else "a", encoding="utf-8", buffering=1)  # 1 MB'ı geçince sıfırla
     sys.stderr = sys.stdout = _f
 
 
 def log(*a):
     print(time.strftime("%Y-%m-%d %H:%M:%S"), *a, file=sys.stderr, flush=True)
+
+
+def save_json(path, data, **kw):
+    """Önce geçici dosyaya yazar, sonra yerine koyar: yazma yarıda kesilirse eski dosya sağlam kalır."""
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(data, f, **kw)
+    os.replace(tmp, path)
 
 
 # ------------------------------------------------------------------ yerleşim
@@ -474,8 +483,7 @@ def import_spotify_history(paths):
         d["c"] = {str(k): v for k, v in d["c"].items()}
     data = {"version": 3, "first": first, "last": last, "artists": artists, "tracks": tracks,
             "days": days}
-    with open(STATS_IMPORT_PATH, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, separators=(",", ":"))
+    save_json(STATS_IMPORT_PATH, data, ensure_ascii=False, separators=(",", ":"))
     return {"n": n, "hours": round(total / 3600), "first": first, "last": last}
 
 
@@ -525,8 +533,7 @@ class Config(dict):
     def save(self):
         with self.lock:
             try:
-                with open(CONFIG_PATH, "w", encoding="utf-8") as f:
-                    json.dump(dict(self), f, indent=1)
+                save_json(CONFIG_PATH, dict(self), indent=1)
             except Exception as e:
                 log("config kaydedilemedi:", e)
 
@@ -2237,8 +2244,7 @@ class App:
                                 "art": thumb})
         del self.history[self.HISTORY_MAX:]
         try:
-            with open(self.HISTORY_PATH, "w", encoding="utf-8") as f:
-                json.dump(self.history, f, ensure_ascii=False)
+            save_json(self.HISTORY_PATH, self.history, ensure_ascii=False)
         except Exception as e:  # noqa: BLE001
             log("geçmiş kaydedilemedi:", repr(e))
 
@@ -2616,8 +2622,7 @@ class App:
                      "repeat": st.get("repeat")}
         self._last_saved = time.monotonic()
         try:
-            with open(LAST_PATH, "w", encoding="utf-8") as f:
-                json.dump(self.last, f, ensure_ascii=False)
+            save_json(LAST_PATH, self.last, ensure_ascii=False)
             if art_changed:
                 if st.get("art"):
                     with open(LAST_ART_PATH, "wb") as f:
@@ -2973,8 +2978,7 @@ class App:
         for k in [k for k in days if k < cutoff]:
             del days[k]
         try:
-            with open(STATS_PATH, "w", encoding="utf-8") as f:
-                json.dump(self.stats, f, ensure_ascii=False)
+            save_json(STATS_PATH, self.stats, ensure_ascii=False)
         except Exception as e:  # noqa: BLE001
             log("istatistik kaydedilemedi:", repr(e))
         self._stat_saved = time.monotonic()
