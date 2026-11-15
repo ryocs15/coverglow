@@ -36,6 +36,8 @@ Kullanıcıyla Türkçe konuş.
   Segoe yerine `fonts/` içindeki Geist'i (OFL, github.com/vercel/geist-font) kullanır. shadcn renkleri
   `SHADCN_ZINC` (github.com/shadcn-ui/ui `apps/v4/registry/themes.ts`, OKLCH) → `build_shadcn()`.
   shadcn paletinde ek olarak `border` anahtarı var (Material paletinde de tanımlı).
+  `neu` (Neumorphic): Material paleti tek tona çekilir (`_scheme`), `neu_raise()` düğme / kapak
+  altına çift yumuşak gölge çizer; gölge img'nin opak pikselleriyle kırpılır, kart dışına taşmaz.
 - **Dil:** `STRINGS["tr"]` ve `STRINGS["en"]`. Her yeni metni iki dile de ekle, `T("anahtar")` ile kullan.
 - **Ayarlar:** `config.json` (`App.__init__` içinde `cfg.setdefault` ile varsayılan ver). Exe çalışırken
   dosyalar `dist\` klasöründedir: config.json, stats.json (canlı istatistik), stats_import.json (içe

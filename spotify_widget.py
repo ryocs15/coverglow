@@ -1123,11 +1123,12 @@ def _rr_mask(w, h, fx0, fy0, fx1, fy1, r, ellipse=False):
 # Tasarım dili: "material" (Material You: büyük yuvarlaklar, tonal dolgular) ya da
 # "shadcn" (shadcn/ui: nötr renkler, ince kenarlıklar, küçük köşeler). shadcn'de rr()
 # köşeleri sınırlar ve düğme boyutundaki daireleri köşeli-yuvarlak kareye çevirir.
-STYLE = {"shad": False, "r": 0.0, "btn": 0.0}
+STYLE = {"shad": False, "neu": False, "r": 0.0, "btn": 0.0}
 
 
 def set_style(name, S):
     STYLE["shad"] = name == "shadcn"
+    STYLE["neu"] = name == "neu"
     STYLE["r"] = 10.0 * S     # en büyük köşe yarıçapı: shadcn --radius 0.625rem
     STYLE["btn"] = 30.0 * S   # bundan büyük daireler düğmedir: kareleştir
 
@@ -1141,6 +1142,9 @@ def rr(img, x0, y0, x1, y1, r, color, alpha=255, ellipse=False):
             ellipse, r = False, STYLE["r"] * 0.8   # düğmeler: rounded-md (radius - 2px)
         elif not ellipse:
             r = min(r, STYLE["r"])
+    if (STYLE["neu"] and ellipse and alpha == 255 and (x1 - x0) >= STYLE["btn"]
+            and abs((x1 - x0) - (y1 - y0)) < 1):
+        neu_raise(img, x0, y0, x1, y1, 0, ellipse=True)   # yuvarlak düğmeler kabarık
     r = max(0.0, min(r, (x1 - x0) / 2, (y1 - y0) / 2))
     ix0, iy0 = max(0, int(math.floor(x0))), max(0, int(math.floor(y0)))
     ix1 = min(img.width, int(math.ceil(x1)))
@@ -1154,6 +1158,41 @@ def rr(img, x0, y0, x1, y1, r, color, alpha=255, ellipse=False):
     layer = Image.new("RGBA", (w, h), tuple(color) + (255,))
     layer.putalpha(m)
     img.alpha_composite(layer, (ix0, iy0))
+
+
+_neu_cache = {}
+
+
+def neu_raise(img, x0, y0, x1, y1, r, ellipse=False):
+    """Neumorphic kabartma: sol üstte açık, sağ altta koyu yumuşak gölge. Gölge yalnızca
+    img'de zaten dolu (opak) piksellere düşer; kartın dışına / şeffaf alana taşmaz."""
+    from PIL import ImageChops, ImageFilter
+    w, h = max(1, round(x1 - x0)), max(1, round(y1 - y0))
+    dd = max(2.0, min(w, h) * 0.09)
+    pad = int(dd * 3) + 1
+    key = (w, h, round(r), ellipse, round(dd, 1))
+    m = _neu_cache.get(key)
+    if m is None:
+        m = Image.new("L", (w + 2 * pad, h + 2 * pad), 0)
+        m.paste(_rr_mask(w, h, 0, 0, w, h, max(0.0, min(r, w / 2, h / 2)), ellipse), (pad, pad))
+        m = m.filter(ImageFilter.GaussianBlur(dd))
+        if len(_neu_cache) > 60:
+            _neu_cache.clear()
+        _neu_cache[key] = m
+    dark = sum(img.getpixel((min(img.width - 1, max(0, int(x0 + w / 2))),
+                             min(img.height - 1, max(0, int(y0 + h / 2)))))[:3]) < 300
+    for off, col, a in ((-dd, (255, 255, 255), 28 if dark else 210),
+                        (dd, (0, 0, 0), 150 if dark else 70)):
+        px, py = round(x0 - pad + off), round(y0 - pad + off)
+        bx0, by0 = max(0, px), max(0, py)
+        bx1, by1 = min(img.width, px + m.width), min(img.height, py + m.height)
+        if bx1 <= bx0 or by1 <= by0:
+            continue
+        sm = m.crop((bx0 - px, by0 - py, bx1 - px, by1 - py)).point(lambda v, a=a: v * a // 255)
+        sm = ImageChops.multiply(sm, img.getchannel("A").crop((bx0, by0, bx1, by1)))
+        layer = Image.new("RGBA", sm.size, col + (255,))
+        layer.putalpha(sm)
+        img.alpha_composite(layer, (bx0, by0))
 
 
 def rounded_image(src, size, radius):
@@ -2845,7 +2884,15 @@ class App:
             # shadcn: 'kapaktan' seçiliyse nötr (siyah/beyaz), sabit renk seçiliyse o renk
             return build_shadcn(self.light, dict(ACCENTS).get(self.cfg.get("accent")))
         seed = dict(ACCENTS).get(self.cfg.get("accent"), self.seed)
-        return build_scheme(seed, self.light)
+        p = build_scheme(seed, self.light)
+        if self.cfg.get("ui") == "neu":
+            # neumorphism: tek ton zemin, düğmeler aynı renk (derinliği gölge verir);
+            # açık gölgenin görünmesi için zemin beyazdan biraz koyu
+            base = mix(p["surface_highest"], p["surface"], 0.3) if self.light else p["surface_high"]
+            p.update(surface=base, surface_high=base, secondary_container=base,
+                     surface_highest=mix(base, (0, 0, 0), 0.08 if self.light else 0.3),
+                     border=mix(base, (0, 0, 0), 0.12))
+        return p
 
     def _set_ui(self, v):
         self._set("ui", v)
@@ -2944,6 +2991,12 @@ class App:
         if STYLE["shad"]:  # shadcn kartı: 1 px kenarlık + düz zemin
             rr(img, x0, y0, x1, y1, r, P["border"])
             b = max(1.0, round(self.S))
+            rr(img, x0 + b, y0 + b, x1 - b, y1 - b, r - b, P["surface"])
+            return
+        if STYLE["neu"]:  # neumorphic kart: sol üst kenar açık, sağ alt kenar koyu (içe çizilir)
+            b = max(1.0, round(self.S))
+            rr(img, x0, y0, x1, y1, r, mix(P["surface"], (255, 255, 255), 0.5 if self.light else 0.1))
+            rr(img, x0 + b, y0 + b, x1, y1, r, mix(P["surface"], (0, 0, 0), 0.18 if self.light else 0.4))
             rr(img, x0 + b, y0 + b, x1 - b, y1 - b, r - b, P["surface"])
             return
         rr(img, x0, y0, x1, y1, r, P["surface"])
@@ -3903,6 +3956,9 @@ class App:
         col = P["primary"]
         if hov == "play":
             col = mix(col, P["on_primary"], 0.10)
+        if STYLE["neu"]:
+            neu_raise(img, X(px_ - pw / 2), X(cy - ph / 2), X(px_ + pw / 2), X(cy + ph / 2),
+                      X(min(22.0, self.play_r * 0.8)))
         rr(img, X(px_ - pw / 2), X(cy - ph / 2), X(px_ + pw / 2), X(cy + ph / 2),
            X(min(22.0, self.play_r * 0.8)), col)
         d.text((X(px_), X(cy)), IC_PAUSE if playing else IC_PLAY, font=self.icon_font(19),
@@ -3961,6 +4017,8 @@ class App:
 
         # kapak
         ax, ay, asz = 16, 16, 120
+        if STYLE["neu"]:
+            neu_raise(img, X(ax), X(ay), X(ax + asz), X(ay + asz), X(20))
         if self.art_rgba is not None:
             img.alpha_composite(self.art_rgba, (round(X(ax)), round(X(ay))))
         else:
@@ -4084,6 +4142,9 @@ class App:
             col = mix(col, P["on_primary"], 0.10)
         if self.pressed == "play":
             col = mix(col, P["on_primary"], 0.18)
+        if STYLE["neu"]:
+            neu_raise(img, X(CX - pw / 2), X(cy - ph / 2), X(CX + pw / 2), X(cy + ph / 2),
+                      X(self.play_r))
         rr(img, X(CX - pw / 2), X(cy - ph / 2), X(CX + pw / 2), X(cy + ph / 2),
            X(self.play_r), col)
         icon(CX, cy, IC_PAUSE if playing else IC_PLAY, 24, P["on_primary"])
@@ -5301,7 +5362,8 @@ class MenuPanel:
         if page == "look":
             out += [
                 {"t": "seg", "id": "s_ui", "label": T("m_ui"), "value": c["ui"],
-                 "options": [("material", "Material You"), ("shadcn", "shadcn/ui")],
+                 "options": [("material", "Material You"), ("shadcn", "shadcn/ui"),
+                             ("neu", "Neumorphic")],
                  "set": lambda v: (app._set_ui(v), self._restyle())},
                 {"t": "seg", "id": "s_theme", "label": T("m_theme"), "value": c["theme"],
                  "options": [("system", T("th_system")), ("dark", T("th_dark")),
