@@ -37,9 +37,10 @@ Kullanıcıyla Türkçe konuş.
   `SHADCN_ZINC` (github.com/shadcn-ui/ui `apps/v4/registry/themes.ts`, OKLCH) → `build_shadcn()`.
   shadcn paletinde ek olarak `border` anahtarı var (Material paletinde de tanımlı).
   `neu` (Neumorphic): sabit slate palet `NEU` → `build_neu()` (kapak / vurgu rengi kullanılmaz, renk
-  seçimi gizli). Kart `grad_rr` ile çapraz geçişli; düğmeler `glass_btn()` (cam: gölge + parlak kenar +
-  iç geçiş; `rr()` büyük daireleri otomatik cam çizer, `plain=True` bunu atlar). `neu_raise()` gölgesi
-  img'nin opak pikselleriyle kırpılır, kart dışına taşmaz. `PillButton` neu'da da cam.
+  seçimi gizli). Kart `_neu_card` (NEU_GRAD çapraz geçiş; cam / yarı şeffaf modda da). Düğmeler
+  `neu_btn()` (soft UI: kart renginde, sol üst açık + sağ alt koyu gölge; `rr()` büyük daireleri
+  otomatik böyle çizer, `plain=True` bunu atlar). `neu_raise()` gölgesi img'nin opak pikselleriyle
+  kırpılır, kart dışına taşmaz. `PillButton` neu'da da kabarık.
 - **Dil:** `STRINGS["tr"]` ve `STRINGS["en"]`. Her yeni metni iki dile de ekle, `T("anahtar")` ile kullan.
 - **Ayarlar:** `config.json` (`App.__init__` içinde `cfg.setdefault` ile varsayılan ver). Exe çalışırken
   dosyalar `dist\` klasöründedir: config.json, stats.json (canlı istatistik), stats_import.json (içe

@@ -1089,19 +1089,21 @@ def build_shadcn(light, accent=None):
     return p
 
 
-# Neumorphic: sabit, soğuk gri-mavi (slate) palet; düğmeler gövde tonunda cam
+# Neumorphic (soft UI): sabit palet. Açık: pastel geçişli beyazımsı; koyu: kömür grisi.
+# Düğmeler kart renginde, derinliği iki yumuşak gölge verir. Vurgu: yumuşak yeşil.
 NEU = {
-    "dark": {"surface": "#3a4249", "surface_high": "#3a4249", "surface_highest": "#2b3238",
-             "secondary_container": "#424b53", "on_secondary_container": "#e4e9ec",
-             "primary_container": "#56636d", "on_primary_container": "#f1f5f7",
-             "primary": "#dfe6ea", "on_primary": "#262c32", "on_surface": "#e4e9ec",
-             "on_surface_variant": "#aab4bb", "outline": "#7d8890", "border": "#59646d"},
-    "light": {"surface": "#d3dae0", "surface_high": "#d3dae0", "surface_highest": "#c0c9d0",
-              "secondary_container": "#d8dfe4", "on_secondary_container": "#1f262c",
-              "primary_container": "#eef2f5", "on_primary_container": "#1f262c",
-              "primary": "#34404a", "on_primary": "#f2f5f7", "on_surface": "#1f262c",
-              "on_surface_variant": "#4f5b64", "outline": "#7c8891", "border": "#b3bec6"},
+    "dark": {"surface": "#2b2d31", "surface_high": "#2b2d31", "surface_highest": "#232528",
+             "secondary_container": "#2e3035", "on_secondary_container": "#e6e7e9",
+             "primary_container": "#34413a", "on_primary_container": "#e6efe8",
+             "primary": "#8cc79c", "on_primary": "#1d2a21", "on_surface": "#e6e7e9",
+             "on_surface_variant": "#9ea3a8", "outline": "#6c7176", "border": "#3a3d42"},
+    "light": {"surface": "#f1f3f4", "surface_high": "#f1f3f4", "surface_highest": "#e4e8eb",
+              "secondary_container": "#f4f6f7", "on_secondary_container": "#3a3f44",
+              "primary_container": "#e1eee5", "on_primary_container": "#2f4a37",
+              "primary": "#6aa77d", "on_primary": "#ffffff", "on_surface": "#3a3f44",
+              "on_surface_variant": "#7d848a", "outline": "#a3a9ae", "border": "#dde1e4"},
 }
+NEU_GRAD = {"light": ("#edf6f1", "#f7eef1"), "dark": ("#303237", "#26282c")}  # sol üst → sağ alt
 
 
 def build_neu(light):
@@ -1163,7 +1165,7 @@ def rr(img, x0, y0, x1, y1, r, color, alpha=255, ellipse=False, plain=False):
             r = min(r, STYLE["r"])
     if (STYLE["neu"] and not plain and ellipse and alpha == 255
             and (x1 - x0) >= STYLE["btn"] * 1.2 and abs((x1 - x0) - (y1 - y0)) < 1):
-        glass_btn(img, x0, y0, x1, y1, 0, color, ellipse=True)   # yuvarlak düğmeler: cam
+        neu_btn(img, x0, y0, x1, y1, 0, color, ellipse=True)   # yuvarlak düğmeler: kabarık
         return
     r = max(0.0, min(r, (x1 - x0) / 2, (y1 - y0) / 2))
     ix0, iy0 = max(0, int(math.floor(x0))), max(0, int(math.floor(y0)))
@@ -1184,7 +1186,7 @@ _neu_cache = {}
 
 
 def neu_raise(img, x0, y0, x1, y1, r, ellipse=False):
-    """Neumorphic yumuşak gölge (aşağıya düşen koyu gölge). Gölge yalnızca img'de zaten
+    """Neumorphic yumuşak gölge: sol üstte açık, sağ altta koyu. Gölge yalnızca img'de zaten
     dolu (opak) piksellere düşer; kartın dışına / şeffaf alana taşmaz."""
     from PIL import ImageChops, ImageFilter
     w, h = max(1, round(x1 - x0)), max(1, round(y1 - y0))
@@ -1201,7 +1203,8 @@ def neu_raise(img, x0, y0, x1, y1, r, ellipse=False):
         _neu_cache[key] = m
     dark = sum(img.getpixel((min(img.width - 1, max(0, int(x0 + w / 2))),
                              min(img.height - 1, max(0, int(y0 + h / 2)))))[:3]) < 300
-    for off, col, a in (((0, dd * 1.2), (0, 0, 0), 150 if dark else 80),):
+    for off, col, a in (((-dd, -dd), (255, 255, 255), 16 if dark else 235),
+                        ((dd, dd), (0, 0, 0) if dark else (150, 162, 178), 150 if dark else 120)):
         px, py = round(x0 - pad + off[0]), round(y0 - pad + off[1])
         bx0, by0 = max(0, px), max(0, py)
         bx1, by1 = min(img.width, px + m.width), min(img.height, py + m.height)
@@ -1215,14 +1218,14 @@ def neu_raise(img, x0, y0, x1, y1, r, ellipse=False):
 
 
 def _grad(w, h, top, bot, diag=False):
-    """Dikey (diag: sağ üstten sol alta) renk geçişi, RGBA."""
+    """Dikey (diag: sol üstten sağ alta) renk geçişi, RGBA."""
     key = ("g", w, h, top, bot, diag)
     g = _neu_cache.get(key)
     if g is None:
         from PIL import ImageChops
         v = Image.linear_gradient("L").resize((w, h))
         if diag:
-            hz = Image.linear_gradient("L").rotate(90).resize((w, h))  # sağda 0, solda 255
+            hz = Image.linear_gradient("L").rotate(90).resize((w, h))  # solda 0, sağda 255
             v = ImageChops.add(v, hz, scale=2)
         g = Image.composite(Image.new("RGBA", (w, h), tuple(bot) + (255,)),
                             Image.new("RGBA", (w, h), tuple(top) + (255,)), v)
@@ -1244,18 +1247,12 @@ def grad_rr(img, x0, y0, x1, y1, r, top, bot, ellipse=False, diag=False):
     img.alpha_composite(layer, (ix0, iy0))
 
 
-def glass_btn(img, x0, y0, x1, y1, r, color, ellipse=False):
-    """Cam düğme: alta düşen gölge, ince koyu dış çizgi, parlak gümüş kenar ve
-    üstte koyu / altta açık iç geçiş. color: gövde tonu (hover / basılı renkleri korunur)."""
-    s = min(x1 - x0, y1 - y0)
+def neu_btn(img, x0, y0, x1, y1, r, color, ellipse=False):
+    """Soft UI düğmesi: kart renginde gövde, iki yumuşak gölgeyle kabarık; kenarlık yok.
+    color: gövde tonu (hover / basılı renkleri korunur)."""
     neu_raise(img, x0, y0, x1, y1, r, ellipse)
-    o = max(1.0, s * 0.02)
-    rr(img, x0, y0, x1, y1, r, mix(color, (0, 0, 0), 0.5), ellipse=ellipse, plain=True)
-    grad_rr(img, x0 + o, y0 + o, x1 - o, y1 - o, r - o, (236, 241, 244),
-            mix((236, 241, 244), color, 0.55), ellipse)       # parlak kenar: üstte daha parlak
-    i = o + max(1.0, s * 0.03)
-    grad_rr(img, x0 + i, y0 + i, x1 - i, y1 - i, r - i, mix(color, (0, 0, 0), 0.14),
-            mix(color, (255, 255, 255), 0.26), ellipse)
+    grad_rr(img, x0, y0, x1, y1, r, mix(color, (255, 255, 255), 0.06),
+            mix(color, (0, 0, 0), 0.04), ellipse)
 
 
 def rounded_image(src, size, radius):
@@ -3026,6 +3023,9 @@ class App:
     def _card(self, img, x0, y0, x1, y1, r):
         """Kart zemini (fiziksel piksel), seçili arka plan stiline göre."""
         P, mode = self.pal, self.cfg["bg"]
+        if STYLE["neu"]:
+            self._neu_card(img, x0, y0, x1, y1, r, mode)
+            return
         if mode == "clear":
             rr(img, x0, y0, x1, y1, r, P["surface"], alpha=150)
             self._card_border(img, x0, y0, x1, y1, r)
@@ -3050,16 +3050,36 @@ class App:
             b = max(1.0, round(self.S))
             rr(img, x0 + b, y0 + b, x1 - b, y1 - b, r - b, P["surface"])
             return
-        if STYLE["neu"]:  # neumorphic kart: sağ üst koyu → sol alt açık geçiş + ince açık kenar
-            b = max(1.0, round(self.S))
-            sf = P["surface"]
-            rr(img, x0, y0, x1, y1, r, mix(sf, (255, 255, 255), 0.35 if self.light else 0.18))
-            grad_rr(img, x0 + b, y0 + b, x1 - b, y1 - b, r - b,
-                    mix(sf, (255, 255, 255), 0.45) if self.light else mix(sf, (0, 0, 0), 0.22),
-                    mix(sf, (0, 0, 0), 0.06) if self.light else mix(sf, (255, 255, 255), 0.12),
-                    diag=True)
-            return
         rr(img, x0, y0, x1, y1, r, P["surface"])
+
+    def _neu_card(self, img, x0, y0, x1, y1, r, mode):
+        """Neumorphic kart: pastel / kömür çapraz geçiş + ince açık kenar. Cam modda duvar
+        kağıdıyla, yarı şeffaf modda saydamlıkla birleşir (geçiş her modda kalır)."""
+        from PIL import ImageChops
+        ix0, iy0 = int(math.floor(x0)), int(math.floor(y0))
+        w, h = int(math.ceil(x1)) - ix0, int(math.ceil(y1)) - iy0
+        if w <= 0 or h <= 0:
+            return
+        c0, c1 = (hexc(c) for c in NEU_GRAD["light" if self.light else "dark"])
+        layer = _grad(w, h, c0, c1, True).copy()
+        if mode == "glass":
+            bg = self._glass_bg()
+            if bg is not None:
+                part = bg.crop((ix0, iy0, ix0 + w, iy0 + h)).convert("RGBA")
+                layer = Image.blend(part, layer, 0.5 if self.light else 0.58)
+        rad = max(0.0, min(r, (x1 - x0) / 2, (y1 - y0) / 2))
+        m = _rr_mask(w, h, x0 - ix0, y0 - iy0, x1 - ix0, y1 - iy0, rad)
+        if mode == "clear":
+            m = m.point(lambda v: v * 150 // 255)
+        layer.putalpha(m)
+        img.alpha_composite(layer, (ix0, iy0))
+        b = max(1.0, round(self.S))
+        inner = _rr_mask(w, h, x0 - ix0 + b, y0 - iy0 + b, x1 - ix0 - b, y1 - iy0 - b,
+                         max(0.0, rad - b))
+        edge = Image.new("RGBA", (w, h), (255, 255, 255, 255))
+        edge.putalpha(ImageChops.subtract(m, inner).point(
+            lambda v: v * (200 if self.light else 22) // 255))
+        img.alpha_composite(edge, (ix0, iy0))
 
     def _card_border(self, img, x0, y0, x1, y1, r):
         """shadcn'de cam / yarı şeffaf kartlara da ince kenarlık (sadece çerçeve)."""
@@ -4017,8 +4037,9 @@ class App:
         if hov == "play":
             col = mix(col, P["on_primary"], 0.10)
         if STYLE["neu"]:
-            glass_btn(img, X(px_ - pw / 2), X(cy - ph / 2), X(px_ + pw / 2), X(cy + ph / 2),
-                      X(min(22.0, self.play_r * 0.8)), mix(col, P["surface"], 0.6))
+            neu_btn(img, X(px_ - pw / 2), X(cy - ph / 2), X(px_ + pw / 2), X(cy + ph / 2),
+                      X(min(22.0, self.play_r * 0.8)),
+                    mix(P["secondary_container"], P["on_surface"], 0.06 if hov == "play" else 0))
         else:
             rr(img, X(px_ - pw / 2), X(cy - ph / 2), X(px_ + pw / 2), X(cy + ph / 2),
                X(min(22.0, self.play_r * 0.8)), col)
@@ -4204,8 +4225,10 @@ class App:
         if self.pressed == "play":
             col = mix(col, P["on_primary"], 0.18)
         if STYLE["neu"]:
-            glass_btn(img, X(CX - pw / 2), X(cy - ph / 2), X(CX + pw / 2), X(cy + ph / 2),
-                      X(self.play_r), mix(col, P["surface"], 0.6))
+            neu_btn(img, X(CX - pw / 2), X(cy - ph / 2), X(CX + pw / 2), X(cy + ph / 2),
+                      X(self.play_r), mix(P["secondary_container"], P["on_surface"],
+                                       0.1 if self.pressed == "play" else
+                                       0.06 if hov == "play" else 0))
         else:
             rr(img, X(CX - pw / 2), X(cy - ph / 2), X(CX + pw / 2), X(cy + ph / 2),
                X(self.play_r), col)
@@ -5919,7 +5942,7 @@ class PillButton(tk.Label):
             "text": (None, P["primary"], None),
         }[kind]
         neu = STYLE["neu"] and kind in ("filled", "tonal")
-        if neu:  # cam düğme: gövde tonu + açık yazı; alttaki gölge için boşluk
+        if neu:  # kabarık düğme; çevresinde iki gölge için boşluk
             fill = P["primary_container"] if kind == "filled" else P["secondary_container"]
             fg = P["on_primary_container"] if kind == "filled" else P["on_secondary_container"]
         f = TextFont("seguisb.ttf", 12 if small else 13, dpi, bold=True)
@@ -5931,18 +5954,19 @@ class PillButton(tk.Label):
         self._imgs = []
         from PIL import ImageTk
         for k in (0.0, 0.08, 0.14):   # normal, üstünde, basılı
-            img = Image.new("RGBA", (w, h + sh), (0, 0, 0, 0))
+            img = Image.new("RGBA", (w + 2 * sh, h + 2 * sh), (0, 0, 0, 0))
             base = fill if fill is not None else dlg.Pbg
             col = mix(base, fg, k) if (fill is not None or k) else None
             if neu:
-                img.paste(tuple(dlg.Pbg) + (255,), (0, 0, w, h + sh))
-                glass_btn(img, 0, 0, w, h, r, col)
+                img.paste(tuple(dlg.Pbg) + (255,), (0, 0) + img.size)
+                neu_btn(img, sh, sh, sh + w, sh + h, r, col)
             elif border is not None:
                 rr(img, 0, 0, w, h, r, border)
                 rr(img, 1, 1, w - 1, h - 1, r - 1, col or base)
             elif col is not None:
                 rr(img, 0, 0, w, h, r, col)
-            Drawer(img).text((w / 2, h / 2), text, font=f, fill=tuple(fg) + (255,), anchor="mm")
+            Drawer(img).text((sh + w / 2, sh + h / 2), text, font=f, fill=tuple(fg) + (255,),
+                             anchor="mm")
             self._imgs.append(ImageTk.PhotoImage(img))
         self.config(image=self._imgs[0])
         self.bind("<Enter>", lambda _e: self.config(image=self._imgs[1]))
