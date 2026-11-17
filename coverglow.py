@@ -51,8 +51,11 @@ from winrt.windows.media.control import (
 from winrt.windows.storage.streams import DataReader
 
 FROZEN = getattr(sys, "frozen", False)  # PyInstaller .exe?
-APP_DIR = (os.path.dirname(sys.executable) if FROZEN
+# exe: settings and stats in %APPDATA%\Coverglow, so the install folder stays read-only and
+# survives reinstalls. Source runs keep them next to the script (tests rely on that).
+APP_DIR = (os.path.join(os.environ["APPDATA"], "Coverglow") if FROZEN
            else os.path.dirname(os.path.abspath(__file__)))
+os.makedirs(APP_DIR, exist_ok=True)
 CONFIG_PATH = os.path.join(APP_DIR, "config.json")
 LAST_PATH = os.path.join(APP_DIR, "last_track.json")
 LAST_ART_PATH = os.path.join(APP_DIR, "last_art.img")

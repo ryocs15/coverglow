@@ -11,8 +11,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/ryocs15/coverglow/releases/latest"><b>⬇ Download Coverglow.exe</b></a>
-  &nbsp;·&nbsp; Windows 10 / 11 &nbsp;·&nbsp; no install needed
+  <a href="https://github.com/ryocs15/coverglow/releases/latest"><b>⬇ Download CoverglowSetup.exe</b></a>
+  &nbsp;·&nbsp; Windows 10 / 11
 </p>
 
 ![Coverglow widgets showing the queue, lyrics and stats tabs](docs/hero.png)
@@ -56,9 +56,11 @@ Material You, shadcn/ui, and Neumorphic in light and dark:
 
 ## Download
 
-1. Get `Coverglow.exe` from the [latest release](https://github.com/ryocs15/coverglow/releases/latest).
-2. Put it in its own folder. Settings, stats and the log are saved next to it.
-3. Run it. The exe is unsigned, so SmartScreen may warn the first time: choose *More info → Run anyway*.
+1. Get `CoverglowSetup.exe` from the [latest release](https://github.com/ryocs15/coverglow/releases/latest).
+2. Run it and pick an install folder. No admin rights needed. The setup is unsigned, so SmartScreen may warn the first time: choose *More info → Run anyway*.
+3. Coverglow starts after setup and with Windows. Settings, stats and the log are kept in `%APPDATA%\Coverglow`, so they survive updates and reinstalls.
+
+To update, run the new setup over the old install. Uninstall from Windows Settings → Apps; your settings stay in `%APPDATA%\Coverglow` until you delete that folder.
 
 To quit, right-click the widget and pick **Close** from the menu.
 
@@ -97,7 +99,9 @@ pip install pyinstaller
 python -m PyInstaller --noconfirm Coverglow.spec
 ```
 
-The output is `dist\Coverglow.exe`. Settings, stats and the log are stored next to the exe. When run as the exe, the widget adds itself to Windows startup; you can turn this off in the menu.
+The output is `dist\Coverglow.exe`. The exe keeps its settings, stats and log in `%APPDATA%\Coverglow` and adds itself to Windows startup; you can turn this off in the menu. Run from source, it keeps them next to `coverglow.py`.
+
+To build the installer, install [Inno Setup 6](https://jrsoftware.org/isinfo.php) and run `ISCC Coverglow.iss`. The output is `dist\CoverglowSetup.exe`.
 
 ## Linking your Spotify account (optional)
 

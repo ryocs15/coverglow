@@ -42,8 +42,8 @@ Reply to the user in the language they write in (the maintainer writes in Turkis
   img's opaque pixels, so it never spills outside the card. `PillButton` is raised in neu too.
 - **Language:** `STRINGS["tr"]` and `STRINGS["en"]`. Add every new string to both, use it via `T("key")`.
   Code comments, logs and docs are in English.
-- **Settings:** `config.json` (give defaults with `cfg.setdefault` in `App.__init__`). When running the exe
-  the files live in `dist\`: config.json, stats.json (live stats), stats_import.json (imported Spotify
+- **Settings:** `config.json` (give defaults with `cfg.setdefault` in `App.__init__`). The exe keeps its files
+  in `%APPDATA%\Coverglow` (source runs: next to coverglow.py): config.json, stats.json (live stats), stats_import.json (imported Spotify
   history), history.json, last_track.json, widget.log.
 
 ## Rules
@@ -66,6 +66,7 @@ Reply to the user in the language they write in (the maintainer writes in Turkis
    both languages and mini/normal mode. `tools/screenshots.py` renders the README images.
 3. Build: `cd D:\Calude\coverglow; Stop-Process -Name Coverglow;
    python -m PyInstaller --noconfirm Coverglow.spec` → start `dist\Coverglow.exe`,
-   check `dist\widget.log` for new errors.
+   check `%APPDATA%\Coverglow\widget.log` for new errors. Installer: bump `AppVersion` in `Coverglow.iss`,
+   then `& "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe" Coverglow.iss` → `dist\CoverglowSetup.exe`.
 4. Commit and push (short English commit message).
 5. At the end, state clearly what you changed, what you tested and what you couldn't try in real use.
