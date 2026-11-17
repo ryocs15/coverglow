@@ -1,70 +1,71 @@
-# Spotify Masaüstü Widget'ı
+# Spotify Desktop Widget
 
-Windows için Python ile yazılmış, Material You tasarımlı Spotify masaüstü widget'ı.
-Kullanıcıyla Türkçe konuş.
+A Material You style Spotify desktop widget for Windows, written in Python.
+Reply to the user in the language they write in (the maintainer writes in Turkish).
 
-## Proje
-- Tüm uygulama tek dosyada: `spotify_widget.py` (~5000 satır).
-- Python 3.15, Windows 11. Bağımlılıklar: Pillow, winrt (Windows.Media.Control vb.), pycaw/comtypes,
+## Project
+- The whole app is one file: `spotify_widget.py` (~6700 lines).
+- Python 3.15, Windows 11. Dependencies: Pillow, winrt (Windows.Media.Control etc.), pycaw/comtypes,
   fontTools, PyInstaller.
-- Git deposu: github.com/ryocs15/spotify-widget (private).
+- Git repo: github.com/ryocs15/spotify-widget.
   git: `%LOCALAPPDATA%\Programs\MinGit\cmd\git.exe`, gh: `%LOCALAPPDATA%\Programs\GitHubCLI\bin\gh.exe`
 
-## Mimari
-- **Çizim:** tkinter sadece olaylar ve diyaloglar için. Widget Pillow ile RGBA görüntü olarak çizilip
-  `UpdateLayeredWindowIndirect` ile katmanlı pencereye basılır (`LayeredSurface`: `full()` / `region()`).
-- **Koordinatlar** mantıksal px; fiziksel = değer × `self.S` (dpi × ölçek). Kodda `X = lambda v: v * S`
-  kalıbı var.
-- **Yardımcılar:** `rr()` yuvarlak dikdörtgen, `rounded_image()`, `Drawer` + `TextFont` (Japonca/Korece/emoji
-  yedek yazı tipleri), `fit_text()`, `wrap_text()`, `fmt_dur()`, `fmt_time()`.
-- **Önbellek:** ana görüntü `base_key` demetiyle önbelleklenir (`_render_all`). Yeni görsel durum eklersen
-  `base_key`'e ekle. İlerleme şeridi ve mini moddaki kayan başlık `region()` ile kısmi güncellenir.
-- **Döngü:** `App._tick` (animasyonda 40 ms, değilse 200 ms). Çizim ucuz kalmalı; pahalı işleri önbelleğe al.
-- **Veri kaynakları:** `MediaWorker` (GSMTC, asyncio iş parçacığı: çalan şarkı, kapak, komutlar),
-  `SpotifyWeb` (PKCE OAuth, sıra, beğeni, arama, cihazlar), `AppVolume` (pycaw: Spotify sesi, ses
-  ölçerleri), `Lyrics` (lrclib.net), `Hotkeys` (RegisterHotKey).
-- **Arayüz parçaları:** `_render_base` / `_render_mini` / `_render_queue` (sekmeler: queue, recent, lyrics,
-  stats), `_render_stats`, `Toast` (şarkı bildirimi + `show_message` ile kısa gösterge), `MenuPanel` (sağ tık
-  menüsü: `items()` içindeki sözlüklerle tanımlanır; türler: quick, nav, toggle, seg, swatch, radio, action,
-  info, header, sep, title), `_Dialog` tabanlı pencereler (`SearchDialog`, `AlarmDialog`, `RecapWindow`),
-  `ConnectDialog`.
-- **Renkler:** albüm kapağından Material You paleti (`self.pal`). Anahtarlar: primary, on_primary,
+## Architecture
+- **Drawing:** tkinter is only used for events and dialogs. The widget is drawn as an RGBA image with Pillow
+  and pushed to a layered window with `UpdateLayeredWindowIndirect` (`LayeredSurface`: `full()` / `region()`).
+- **Coordinates** are logical px; physical = value × `self.S` (dpi × scale). The code uses the
+  `X = lambda v: v * S` pattern.
+- **Helpers:** `rr()` rounded rectangle, `rounded_image()`, `Drawer` + `TextFont` (Japanese/Korean/emoji
+  fallback fonts), `fit_text()`, `wrap_text()`, `fmt_dur()`, `fmt_time()`.
+- **Cache:** the main image is cached by the `base_key` tuple (`_render_all`). If you add new visual state,
+  add it to `base_key`. The progress strip and the mini-mode scrolling title update partially via `region()`.
+- **Loop:** `App._tick` (40 ms while animating, else 200 ms). Drawing must stay cheap; cache expensive work.
+- **Data sources:** `MediaWorker` (GSMTC, asyncio thread: current track, cover, commands),
+  `SpotifyWeb` (PKCE OAuth, queue, like, search, devices), `AppVolume` (pycaw: Spotify volume, peak
+  meters), `Lyrics` (lrclib.net), `Hotkeys` (RegisterHotKey).
+- **UI parts:** `_render_base` / `_render_mini` / `_render_queue` (tabs: queue, recent, lyrics, stats),
+  `_render_stats`, `Toast` (track toast + short indicator via `show_message`), `MenuPanel` (right-click
+  menu: defined by dicts in `items()`; kinds: quick, nav, toggle, seg, swatch, radio, action, info, header,
+  sep, title), `_Dialog`-based windows (`SearchDialog`, `AlarmDialog`, `RecapWindow`), `ConnectDialog`.
+- **Colors:** Material You palette from the album cover (`self.pal`). Keys: primary, on_primary,
   primary_container, on_primary_container, secondary_container, on_secondary_container, surface,
-  surface_high, surface_highest, on_surface, on_surface_variant, outline. Sabit renk kullanma.
-- **Tasarım dili:** `cfg["ui"]` = `material` / `shadcn`. Global `STYLE` + `set_style()`: shadcn'de
-  `rr()` köşeleri 10 px ile sınırlar ve düğme boyutundaki daireleri köşeli kareye çevirir; `ui_font()`
-  Segoe yerine `fonts/` içindeki Geist'i (OFL, github.com/vercel/geist-font) kullanır. shadcn renkleri
+  surface_high, surface_highest, on_surface, on_surface_variant, outline. Don't hard-code colors.
+- **Design language:** `cfg["ui"]` = `material` / `shadcn` / `neu`. Global `STYLE` + `set_style()`: in shadcn
+  `rr()` caps corners at 10 px and turns button-sized circles into rounded squares; `ui_font()` uses
+  Geist from `fonts/` (OFL, github.com/vercel/geist-font) instead of Segoe. shadcn colors come from
   `SHADCN_ZINC` (github.com/shadcn-ui/ui `apps/v4/registry/themes.ts`, OKLCH) → `build_shadcn()`.
-  shadcn paletinde ek olarak `border` anahtarı var (Material paletinde de tanımlı).
-  `neu` (Neumorphic): sabit slate palet `NEU` → `build_neu()` (kapak / vurgu rengi kullanılmaz, renk
-  seçimi gizli). Kart `_neu_card` (NEU_GRAD çapraz geçiş; cam / yarı şeffaf modda da). Düğmeler
-  `neu_btn()` (soft UI: kart renginde, sol üst açık + sağ alt koyu gölge; `rr()` büyük daireleri
-  otomatik böyle çizer, `plain=True` bunu atlar). `neu_raise()` gölgesi img'nin opak pikselleriyle
-  kırpılır, kart dışına taşmaz. `PillButton` neu'da da kabarık.
-- **Dil:** `STRINGS["tr"]` ve `STRINGS["en"]`. Her yeni metni iki dile de ekle, `T("anahtar")` ile kullan.
-- **Ayarlar:** `config.json` (`App.__init__` içinde `cfg.setdefault` ile varsayılan ver). Exe çalışırken
-  dosyalar `dist\` klasöründedir: config.json, stats.json (canlı istatistik), stats_import.json (içe
-  aktarılan Spotify geçmişi), history.json, last_track.json, widget.log.
+  The shadcn palette also has a `border` key (defined in the Material palette too).
+  `neu` (Neumorphic): fixed slate palette `NEU` → `build_neu()` (cover / accent colors unused, color
+  picker hidden). Card is `_neu_card` (NEU_GRAD diagonal gradient; also in glass / translucent mode).
+  Buttons are `neu_btn()` (soft UI: card colored, light shadow top left + dark bottom right; `rr()` draws
+  big circles this way automatically, `plain=True` skips it). The `neu_raise()` shadow is clipped to
+  img's opaque pixels, so it never spills outside the card. `PillButton` is raised in neu too.
+- **Language:** `STRINGS["tr"]` and `STRINGS["en"]`. Add every new string to both, use it via `T("key")`.
+  Code comments, logs and docs are in English.
+- **Settings:** `config.json` (give defaults with `cfg.setdefault` in `App.__init__`). When running the exe
+  the files live in `dist\`: config.json, stats.json (live stats), stats_import.json (imported Spotify
+  history), history.json, last_track.json, widget.log.
 
-## Kurallar
-- `config.json`'daki refresh_token gizli: asla yazdırma, loglama, commit etme. Kişisel veri dosyaları
-  `.gitignore`'da kalmalı.
-- Kullanıcının müziğini çalan/değiştiren komutları (play, queue, transfer, seek) test için kendiliğinden
-  gönderme; gerekiyorsa önce sor.
-- Spotify Web API'yi script'ten çağıracaksan önce çalışan exe'yi kapat (`Stop-Process -Name SpotifyWidget`),
-  sonra yeniden başlat: token yenilenince iki kopya çakışabilir.
-- Spotify notları: eski `/me/tracks` uç noktası 403 veriyor, `/me/library` kullanılıyor. Çalma kontrolü
-  Premium ister. Yeni bir izin (scope) eklersen kullanıcının hesabı yeniden bağlaması gerekir; bunu söyle.
-- Mevcut özellikleri bozma: mini mod, ekranın altındayken yukarı büyüme, tam ekranda bildirim, cam arka
-  plan, Discord'da kısma, istatistik önbellekleri, menünün yukarı açılınca alt kenarı sabit tutması.
+## Rules
+- The refresh_token in `config.json` is secret: never print, log or commit it. Personal data files must
+  stay in `.gitignore`.
+- Don't send commands that play/change the user's music (play, queue, transfer, seek) for testing on your
+  own; ask first if needed.
+- If you call the Spotify Web API from a script, stop the running exe first (`Stop-Process -Name
+  SpotifyWidget`) and restart it afterwards: two copies can clash when the token refreshes.
+- Spotify notes: the old `/me/tracks` endpoint returns 403, `/me/library` is used. Playback control needs
+  Premium. If you add a new scope the user must reconnect their account; say so.
+- Don't break existing features: mini mode, growing upward at the bottom of the screen, toast over
+  fullscreen apps, glass background, Discord ducking, stats caches, the menu keeping its bottom edge when
+  it opens upward.
 
-## Çalışma şekli
-1. İlgili kodu oku, sonra değiştir. Var olan yardımcıları ve kalıpları kullan.
-2. Görsel değişiklikleri başsız test et: script'te `App()` oluştur, `a.cfg.save` ve `a.media.command`'ı
-   etkisizleştir, durumu ayarla, `a.base_key = None; a._render_all()` çağır, `a.base`'i PNG olarak kaydedip
-   incele. Her iki dili ve mini/normal modu kontrol et.
-3. Derle: `cd D:\Calude\spotify_widget; Stop-Process -Name SpotifyWidget;
-   python -m PyInstaller --noconfirm SpotifyWidget.spec` → `dist\SpotifyWidget.exe`'yi başlat,
-   `dist\widget.log`'da yeni hata olmadığını kontrol et.
-4. Commit at ve push et (Türkçe, kısa commit mesajı).
-5. Sonunda neyi değiştirdiğini, neyi test ettiğini ve neyi gerçek kullanımda deneyemediğini açıkça yaz.
+## Workflow
+1. Read the relevant code, then change it. Use existing helpers and patterns.
+2. Test visual changes headless: create `App()` in a script, stub out `a.cfg.save` and `a.media.command`,
+   set the state, call `a.base_key = None; a._render_all()`, save `a.base` as PNG and inspect it. Check
+   both languages and mini/normal mode. `tools/screenshots.py` renders the README images.
+3. Build: `cd D:\Calude\spotify_widget; Stop-Process -Name SpotifyWidget;
+   python -m PyInstaller --noconfirm SpotifyWidget.spec` → start `dist\SpotifyWidget.exe`,
+   check `dist\widget.log` for new errors.
+4. Commit and push (short English commit message).
+5. At the end, state clearly what you changed, what you tested and what you couldn't try in real use.

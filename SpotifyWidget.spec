@@ -18,7 +18,7 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    # kullanılmayan büyük parçalar: AVIF/WebP/renk profili (kapaklar JPEG), test/geliştirme modülleri
+    # unused large parts: AVIF/WebP/color profiles (covers are JPEG), test/dev modules
     excludes=['PIL.AvifImagePlugin', 'PIL._avif', 'PIL.WebPImagePlugin', 'PIL._webp',
               'PIL.ImageCms', 'PIL._imagingcms', 'numpy', 'unittest', 'pydoc', 'doctest',
               'lib2to3', 'tkinter.test', 'idlelib'],

@@ -1,16 +1,16 @@
 """
-Spotify Masaüstü Widget'ı — Material You (Windows 10/11)
+Spotify Desktop Widget — Material You (Windows 10/11)
 
-- Rainmeter gibi masaüstüne yapışır: pencerelerin altında durur, Win+D'de kaybolmaz,
-  görev çubuğunda / Alt+Tab'da görünmez.
-- Albüm kapağından dinamik Material You renk paleti (koyu / açık / sistem).
-- Dalgalı ilerleme çubuğu: tıkla / sürükle / tekerlek ile ileri-geri sar.
-- Karışık çal, tekrar (kapalı / liste / şarkı), önceki / oynat / sonraki.
-- Sıradaki listesi (isteğe bağlı Spotify hesabı bağlantısı ile), tıklayınca o şarkıya atlar.
-- Kapağa tıkla -> Spotify'ı aç. Sağ tık -> ayarlar menüsü.
+- Sticks to the desktop like Rainmeter: stays below windows, survives Win+D,
+  hidden from the taskbar / Alt+Tab.
+- Dynamic Material You palette from the album art (dark / light / system).
+- Wavy progress bar: click / drag / scroll to seek.
+- Shuffle, repeat (off / context / track), previous / play / next.
+- Up-next queue (with an optional Spotify account link); click a track to jump to it.
+- Click the cover -> open Spotify. Right click -> settings menu.
 
-Çalma bilgisi ve kontroller Windows medya API'sinden (GSMTC) gelir; API anahtarı gerekmez.
-Sıradaki listesi için Spotify Web API (PKCE, gizli anahtar gerekmez) kullanılır.
+Playback info and controls come from the Windows media API (GSMTC); no API key needed.
+The up-next queue uses the Spotify Web API (PKCE, no client secret needed).
 """
 
 import asyncio
@@ -50,21 +50,21 @@ from winrt.windows.media.control import (
 )
 from winrt.windows.storage.streams import DataReader
 
-FROZEN = getattr(sys, "frozen", False)  # PyInstaller .exe içinde mi?
+FROZEN = getattr(sys, "frozen", False)  # PyInstaller .exe?
 APP_DIR = (os.path.dirname(sys.executable) if FROZEN
            else os.path.dirname(os.path.abspath(__file__)))
 CONFIG_PATH = os.path.join(APP_DIR, "config.json")
 LAST_PATH = os.path.join(APP_DIR, "last_track.json")
 LAST_ART_PATH = os.path.join(APP_DIR, "last_art.img")
 STATS_PATH = os.path.join(APP_DIR, "stats.json")
-FRAME_MS = 16  # animasyon karesi aralığı (~60 fps)
+FRAME_MS = 16  # animation frame interval (~60 fps)
 LOG_PATH = os.path.join(APP_DIR, "widget.log")
 FONT_DIR = os.path.join(os.environ.get("WINDIR", r"C:\Windows"), "Fonts")
 
-# pythonw altında stderr yok: hataları dosyaya yaz
+# no stderr under pythonw: write errors to a file
 if sys.stderr is None or sys.stdout is None:
     _big = os.path.exists(LOG_PATH) and os.path.getsize(LOG_PATH) > 1_000_000
-    _f = open(LOG_PATH, "w" if _big else "a", encoding="utf-8", buffering=1)  # 1 MB'ı geçince sıfırla
+    _f = open(LOG_PATH, "w" if _big else "a", encoding="utf-8", buffering=1)  # reset past 1 MB
     sys.stderr = sys.stdout = _f
 
 
@@ -73,15 +73,15 @@ def log(*a):
 
 
 def save_json(path, data, **kw):
-    """Önce geçici dosyaya yazar, sonra yerine koyar: yazma yarıda kesilirse eski dosya sağlam kalır."""
+    """Write to a temp file first, then swap it in: an interrupted write leaves the old file intact."""
     tmp = path + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f, **kw)
     os.replace(tmp, path)
 
 
-# ------------------------------------------------------------------ yerleşim
-W = 380            # mantıksal piksel (96 DPI)
+# ------------------------------------------------------------------ layout
+W = 380            # logical pixels (96 DPI)
 MAIN_H = 268
 GAP = 8
 Q_HEAD = 52
@@ -89,18 +89,18 @@ Q_ROW = 56
 Q_ROWS = 5
 Q_PAD = 10
 TOTAL_H = MAIN_H + GAP + Q_HEAD + Q_ROWS * Q_ROW + Q_PAD
-STATS_H = 286  # istatistik sekmesinin gövde yüksekliği (en fazla Q_ROWS * Q_ROW + Q_PAD)
+STATS_H = 286  # stats tab body height (at most Q_ROWS * Q_ROW + Q_PAD)
 
-# boyut ön ayarları (DPI ölçeğinin üstüne çarpan); Ctrl + tekerlek ile ara değerler
+# size presets (multiplier on top of DPI scale); Ctrl + wheel for values in between
 SIZES = (("size_s", 0.75), ("size_m", 0.85), ("size_n", 1.0), ("size_l", 1.15))
 SCALE_MIN, SCALE_MAX, SCALE_STEP = 0.6, 1.2, 0.05
 
-MINI_H = 80               # mini mod yüksekliği
-MINI_BAR_Y = 73           # mini moddaki ince ilerleme çizgisi
+MINI_H = 80               # mini mode height
+MINI_BAR_Y = 73           # thin progress line in mini mode
 MINI_ART = 56
 BAR_X0, BAR_X1, BAR_CY = 24, W - 24, 160
 STRIP_Y0, STRIP_Y1 = 144, 194
-LAM, AMP = 36.0, 3.0          # dalga boyu / genliği
+LAM, AMP = 36.0, 3.0          # wavelength / amplitude
 CTRL_CY = 228
 CX = W / 2
 
@@ -118,7 +118,7 @@ SCOPES = ("user-read-playback-state user-read-currently-playing "
 UA = "SpotifyDesktopWidget/1.0 (+https://lrclib.net)"
 
 
-# ------------------------------------------------------------------ dil
+# ------------------------------------------------------------------ language
 STRINGS = {
     "tr": {
         "playing": "ŞİMDİ ÇALIYOR", "paused": "DURAKLATILDI",
@@ -388,16 +388,16 @@ def T(key, **kw):
 
 
 def default_lang():
-    try:  # Windows arayüz dili Türkçe ise tr, değilse en
+    try:  # Windows UI language Turkish -> tr, otherwise en
         return "tr" if (ctypes.windll.kernel32.GetUserDefaultUILanguage() & 0x3FF) == 0x1F \
             else "en"
     except Exception:  # noqa: BLE001
-        return "tr"
+        return "en"
 
 
 def fmt_dur(sec):
     m = int(sec // 60)
-    if m >= 6000:  # 100 saatten fazlası: sadece saat
+    if m >= 6000:  # over 100 hours: hours only
         return T("dur_h", h=f"{m // 60:,}".replace(",", "."))
     return T("dur_min", m=m) if m < 60 else T("dur_hm", h=m // 60, m=m % 60)
 
@@ -406,9 +406,9 @@ STATS_IMPORT_PATH = os.path.join(APP_DIR, "stats_import.json")
 
 
 def import_spotify_history(paths):
-    """Spotify 'Verilerini indir' dışa aktarımını (zip ya da json) günlük özetlere çevirir.
-    Hem genişletilmiş geçmiş (ts, ms_played, master_metadata_*) hem de hesap verisi
-    (endTime, msPlayed, artistName, trackName) biçimini destekler. Sadece müzik sayılır."""
+    """Convert a Spotify 'Download your data' export (zip or json) into daily summaries.
+    Supports both extended streaming history (ts, ms_played, master_metadata_*) and account data
+    (endTime, msPlayed, artistName, trackName). Only music is counted."""
     import zipfile
 
     def records():
@@ -443,8 +443,8 @@ def import_spotify_history(paths):
             if r.get("podcastName") or r.get("episodeName"):
                 title = None
         if not title or not artist or when is None or ms <= 0:
-            continue  # podcast, sesli kitap, bozuk kayıt
-        # hesap verisi + genişletilmiş geçmiş birlikte seçilirse aynı dinleme iki kez gelir
+            continue  # podcast, audiobook, broken record
+        # if account data + extended history are picked together the same play arrives twice
         dup = (when.strftime("%Y-%m-%d %H:%M"), title, artist)
         if dup in seen:
             continue
@@ -465,7 +465,7 @@ def import_spotify_history(paths):
         d["s"] += sec
         hr = str(local.hour)
         d["h"][hr] = d["h"].get(hr, 0.0) + sec
-        if ms >= 30000:  # Spotify 30 sn'yi bir dinleme sayar
+        if ms >= 30000:  # Spotify counts 30 s as a play
             d["p"] += 1
             d["c"][ti] = d["c"].get(ti, 0) + 1
         d["a"][ai] = d["a"].get(ai, 0.0) + sec
@@ -476,7 +476,7 @@ def import_spotify_history(paths):
         last = day if last is None or day > last else last
     if not n:
         return None
-    for d in days.values():  # dosya küçük kalsın
+    for d in days.values():  # keep the file small
         d["s"] = round(d["s"], 1)
         d["a"] = {str(k): round(v, 1) for k, v in d["a"].items()}
         d["t"] = {str(k): round(v, 1) for k, v in d["t"].items()}
@@ -489,7 +489,7 @@ def import_spotify_history(paths):
 
 
 def load_imported_history():
-    """stats_import.json → {gün: {"sec", "plays", "artists": {ad: sn}, "tracks": {ad\\tsanatçı: sn}}}"""
+    """stats_import.json → {day: {"sec", "plays", "artists": {name: s}, "tracks": {name\\tartist: s}}}"""
     try:
         with open(STATS_IMPORT_PATH, "r", encoding="utf-8") as f:
             data = json.load(f)
@@ -505,7 +505,7 @@ def load_imported_history():
     except FileNotFoundError:
         return {}
     except Exception as e:  # noqa: BLE001
-        log("içe aktarılan geçmiş okunamadı:", repr(e))
+        log("could not read imported history:", repr(e))
         return {}
 
 
@@ -520,7 +520,7 @@ def time_ago(ts):
     return T("ago_day", n=int(sec // 86400))
 
 
-# ------------------------------------------------------------------ ayarlar
+# ------------------------------------------------------------------ settings
 class Config(dict):
     def __init__(self):
         super().__init__()
@@ -536,7 +536,7 @@ class Config(dict):
             try:
                 save_json(CONFIG_PATH, dict(self), indent=1)
             except Exception as e:
-                log("config kaydedilemedi:", e)
+                log("could not save config:", e)
 
 
 # ------------------------------------------------------------------ Win32
@@ -617,7 +617,7 @@ def set_dpi_awareness():
 
 
 class LayeredSurface:
-    """Pencere içeriğini per-pixel alfa ile (UpdateLayeredWindowIndirect) çizer."""
+    """Draws window content with per-pixel alpha (UpdateLayeredWindowIndirect)."""
 
     def __init__(self, hwnd, w, h):
         self.hwnd, self.w, self.h = hwnd, w, h
@@ -627,7 +627,7 @@ class LayeredSurface:
         bmi = BITMAPINFO()
         bmi.bmiHeader.biSize = ctypes.sizeof(BITMAPINFOHEADER)
         bmi.bmiHeader.biWidth = w
-        bmi.bmiHeader.biHeight = -h  # yukarıdan aşağı
+        bmi.bmiHeader.biHeight = -h  # top-down
         bmi.bmiHeader.biPlanes = 1
         bmi.bmiHeader.biBitCount = 32
         self.bits = ctypes.c_void_p()
@@ -638,18 +638,18 @@ class LayeredSurface:
 
     @staticmethod
     def to_bgra(img):
-        r, g, b, a = img.convert("RGBa").split()  # ön-çarpımlı alfa
+        r, g, b, a = img.convert("RGBa").split()  # premultiplied alpha
         return Image.merge("RGBA", (b, g, r, a)).tobytes()
 
     def full(self, img, h=None, pos=None):
-        """Tüm pencereyi güncelle. h verilirse sadece üstteki h satır dönüştürülür (içerik
-        küçükken, ör. mini mod, tüm pencereyi işlememek için); altı şeffaf temizlenir.
-        pos verilirse pencere aynı çağrıda oraya taşınır (taşıma + çizim aynı karede)."""
+        """Update the whole window. If h is given only the top h rows are converted (when content
+        is small, e.g. mini mode, to avoid processing the whole window); the rest is cleared.
+        If pos is given the window is moved in the same call (move + draw in the same frame)."""
         h = self.h if h is None else max(1, min(self.h, h))
         data = self.to_bgra(img if h == self.h else img.crop((0, 0, self.w, h)))
         ctypes.memmove(self.bits, data, len(data))
         prev = getattr(self, "_used_h", self.h)
-        if prev > h:  # önceki daha uzun içerikten kalan satırları sil
+        if prev > h:  # clear rows left over from taller previous content
             ctypes.memset(self.bits.value + h * self.w * 4, 0, (prev - h) * self.w * 4)
         self._used_h = h
         self._commit(None, pos)
@@ -678,7 +678,7 @@ class LayeredSurface:
         info.prcDirty = ctypes.pointer(rect) if rect is not None else None
         if not user32.UpdateLayeredWindowIndirect(self.hwnd, ctypes.byref(info)):
             if not self._warned:
-                log("UpdateLayeredWindowIndirect başarısız:", ctypes.GetLastError())
+                log("UpdateLayeredWindowIndirect failed:", ctypes.GetLastError())
                 self._warned = True
 
 
@@ -702,10 +702,10 @@ def monitor_info(hwnd):
 
 
 def fullscreen_info(own=()):
-    """(monitör dikdörtgeni ya da None, açıklama). Tam ekran sayılır:
-    - Windows 'tam ekran uygulama çalışıyor' diyorsa (QUNS_BUSY=2, D3D tam ekran=3, sunum=4),
-    - ya da ön plandaki pencere monitörün en az %97'sini kaplıyorsa (1 px küçük açılan
-      kenarlıksız oyunlar dahil)."""
+    """(monitor rect or None, reason). Counts as fullscreen:
+    - if Windows says 'a fullscreen app is running' (QUNS_BUSY=2, D3D fullscreen=3, presentation=4),
+    - or the foreground window covers at least 97% of the monitor (including borderless
+      games that open 1 px smaller)."""
     try:
         state = ctypes.c_int(0)
         ctypes.windll.shell32.SHQueryUserNotificationState(ctypes.byref(state))
@@ -715,7 +715,7 @@ def fullscreen_info(own=()):
             user32.GetClassNameW(hwnd, cls, 64)
         desc = f"on={cls.value or '-'} durum={state.value}"
         if not hwnd or hwnd in own or cls.value in _SHELL_CLASSES:
-            # ön planda kendimiz / masaüstü var; Windows yine de tam ekran diyorsa birincil monitör
+            # we / the desktop are in front; if Windows still says fullscreen use the primary monitor
             if state.value in (3, 4):
                 return monitor_info(user32.GetDesktopWindow()).rcMonitor, desc + " (sistem)"
             return None, desc
@@ -736,12 +736,12 @@ def fullscreen_info(own=()):
 
 
 def fullscreen_app(own=()):
-    """Ön plandaki pencere tam ekransa (oyun, video, sunum) o monitörün dikdörtgeni; değilse None."""
+    """Monitor rect if the foreground window is fullscreen (game, video, presentation); else None."""
     return fullscreen_info(own)[0]
 
 
 def _spotify_exe():
-    """Spotify'ın kurulu olduğu exe (protokol kaydından ya da varsayılan konumdan)."""
+    """Installed Spotify exe (from the protocol registration or the default location)."""
     try:
         with winreg.OpenKey(winreg.HKEY_CLASSES_ROOT, r"spotify\shell\open\command") as k:
             cmd = winreg.QueryValueEx(k, "")[0]
@@ -755,7 +755,7 @@ def _spotify_exe():
 
 
 def _spotify_window():
-    """Spotify'ın görünen ana penceresi (yoksa None)."""
+    """Spotify's visible main window (None if there is none)."""
     found = []
     try:
         import psutil
@@ -783,14 +783,14 @@ def _spotify_window():
 
 
 def open_spotify(uri=None, web_url=None):
-    """Spotify'ı öne getir (uri verilirse o sayfayı aç: sanatçı, albüm, arama, şarkı).
-    Açıksa penceresini geri yükler; kapalıysa / tepsideyse Spotify.exe'yi doğrudan başlatır.
-    (os.startfile('spotify:…') Spotify kapalıyken onu başlatmıyor ve pencereyi öne getirmiyor.)"""
+    """Bring Spotify to front (open that page if uri is given: artist, album, search, track).
+    Restores its window if open; if closed / in the tray, launches Spotify.exe directly.
+    (os.startfile('spotify:…') doesn't start Spotify when closed and doesn't raise the window.)"""
     h = _spotify_window()
     if h:
         if user32.IsIconic(h):
             user32.ShowWindow(h, 9)  # SW_RESTORE
-        # odak kilidini aşmak için Alt'a kısa bas (Windows bunu önerilen yol olarak kabul eder)
+        # tap Alt briefly to get past the focus lock (Windows accepts this as the recommended way)
         user32.keybd_event(0x12, 0, 0, 0)
         user32.keybd_event(0x12, 0, 2, 0)
         user32.SetForegroundWindow(h)
@@ -800,10 +800,10 @@ def open_spotify(uri=None, web_url=None):
     try:
         if exe:
             import subprocess
-            # çalışıyorsa mevcut pencereye iletir, değilse başlatır
+            # forwards to the running window if any, otherwise starts it
             args = [exe] + ([f"--protocol-uri={uri}"] if uri else [])
             subprocess.Popen(args, close_fds=True)
-        else:  # Microsoft Store sürümü
+        else:  # Microsoft Store version
             os.startfile(uri or "shell:AppsFolder\\SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify")
     except OSError:
         webbrowser.open(web_url or "https://open.spotify.com")
@@ -816,7 +816,7 @@ def set_window_styles(hwnd):
 
 
 def pin_to_desktop(hwnd):
-    # Sahibi Progman (masaüstü) olan pencereler Win+D'de gizlenmez ve en altta kalır
+    # Windows owned by Progman (the desktop) aren't hidden by Win+D and stay at the bottom
     progman = user32.FindWindowW("Progman", None)
     user32.SetWindowLongPtrW(hwnd, GWLP_HWNDPARENT, progman or 0)
     user32.SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0,
@@ -842,12 +842,12 @@ def pin_on_top(hwnd):
 
 
 class AppVolume:
-    """Spotify'ın Windows ses karıştırıcısındaki ses düzeyi (0..1)."""
+    """Spotify's volume in the Windows volume mixer (0..1)."""
 
     def __init__(self, exe="spotify.exe"):
         self.exe = exe
         self._cache = (0.0, [])
-        self._all = (0.0, [])   # (zaman, [(süreç adı, ses seviyesi ölçer)])
+        self._all = (0.0, [])   # (time, [(process name, peak meter)])
 
     def _sessions(self):
         t, ss = self._cache
@@ -858,14 +858,14 @@ class AppVolume:
             ss = [s.SimpleAudioVolume for s in AudioUtilities.GetAllSessions()
                   if s.Process and s.Process.name().lower() == self.exe]
         except Exception as e:  # noqa: BLE001
-            log("ses oturumları okunamadı:", repr(e))
+            log("could not read audio sessions:", repr(e))
             ss = []
         self._cache = (time.monotonic(), ss)
         return ss
 
     def _meters(self):
         t, ms = self._all
-        if time.monotonic() - t < 8:  # oturum listesi pahalı (her süreç adı okunur)
+        if time.monotonic() - t < 8:  # session list is expensive (every process name is read)
             return ms
         ms = []
         try:
@@ -878,12 +878,12 @@ class AppVolume:
                     except Exception:  # noqa: BLE001
                         pass
         except Exception as e:  # noqa: BLE001
-            log("ses ölçerleri okunamadı:", repr(e))
+            log("could not read peak meters:", repr(e))
         self._all = (time.monotonic(), ms)
         return ms
 
     def peak(self, names):
-        """Verilen süreçlerin o anki en yüksek çıkış seviyesi (0..1)."""
+        """Current highest output level of the given processes (0..1)."""
         best = 0.0
         for name, m in self._meters():
             if name in names:
@@ -916,7 +916,7 @@ class AppVolume:
 
 MOD_ALT, MOD_CONTROL, MOD_NOREPEAT = 0x1, 0x2, 0x4000
 WM_HOTKEY, WM_QUIT = 0x0312, 0x0012
-HOTKEYS = (  # (kimlik, değiştirici, tuş, eylem, tuş adı, metin anahtarı)
+HOTKEYS = (  # (id, modifier, key, action, key name, string key)
     (1, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, 0x50, "play", "Ctrl+Alt+P", "hk_play"),
     (2, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, 0x27, "next", "Ctrl+Alt+→", "hk_next"),
     (3, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, 0x25, "prev", "Ctrl+Alt+←", "hk_prev"),
@@ -929,7 +929,7 @@ IC_HEART, IC_HEART_O = "", ""
 
 
 class Hotkeys:
-    """Genel klavye kısayolları: ayrı bir iş parçacığında RegisterHotKey + mesaj döngüsü."""
+    """Global hotkeys: RegisterHotKey + message loop on a separate thread."""
 
     def __init__(self, out_queue):
         self.q = out_queue
@@ -939,7 +939,7 @@ class Hotkeys:
 
     def start(self):
         if self.thread and self.thread.is_alive():
-            self.thread.join(1.0)  # önceki durdurma isteğinin bitmesini bekle
+            self.thread.join(1.0)  # wait for the previous stop request to finish
             if self.thread.is_alive():
                 return
         self.thread = threading.Thread(target=self._run, daemon=True)
@@ -960,7 +960,7 @@ class Hotkeys:
             else:
                 self.failed.append(keys)
         if self.failed:
-            log("kısayol kaydedilemedi (başka uygulama kullanıyor):", ", ".join(self.failed))
+            log("could not register hotkey (used by another app):", ", ".join(self.failed))
         msg = wintypes.MSG()
         while u.GetMessageW(ctypes.byref(msg), None, 0, 0) > 0:
             if msg.message == WM_HOTKEY and msg.wParam in actions:
@@ -978,9 +978,9 @@ def system_prefers_light():
         return False
 
 
-# ------------------------------------------------------------------ renkler
-DEFAULT_SEED = (0.39, 0.70)  # Spotify yeşili
-# sabit renk seçenekleri: (ad, (ton, doygunluk))
+# ------------------------------------------------------------------ colors
+DEFAULT_SEED = (0.39, 0.70)  # Spotify green
+# fixed color choices: (name, (hue, saturation))
 ACCENTS = [("green", (0.39, 0.70)), ("blue", (0.60, 0.65)), ("purple", (0.75, 0.55)),
            ("pink", (0.92, 0.60)), ("red", (0.0, 0.65)), ("orange", (0.07, 0.80)),
            ("teal", (0.48, 0.60)), ("mono", (0.0, 0.0))]
@@ -1005,7 +1005,7 @@ def seed_from_image(img):
 def build_scheme(seed, light):
     h, s = seed
     sp = min(0.85, max(0.40, s)) if s >= 0.15 else s * 0.6
-    sn = sp * 0.28  # nötr yüzeyler için düşük doygunluk
+    sn = sp * 0.28  # low saturation for neutral surfaces
 
     def T(tone, sat):
         return tuple(int(round(c * 255)) for c in colorsys.hls_to_rgb(h, tone / 100, sat))
@@ -1049,7 +1049,7 @@ def oklch(L, C, h):
     return tuple(round(enc(c) * 255) for c in lin)
 
 
-# shadcn/ui v4 "zinc" teması — github.com/shadcn-ui/ui, apps/v4/registry/themes.ts
+# shadcn/ui v4 "zinc" theme — github.com/shadcn-ui/ui, apps/v4/registry/themes.ts
 SHADCN_ZINC = {
     "light": {"background": (1, 0, 0), "foreground": (0.141, 0.005, 285.823),
               "card": (1, 0, 0), "primary": (0.21, 0.006, 285.885),
@@ -1064,16 +1064,16 @@ SHADCN_ZINC = {
              "secondary-foreground": (0.985, 0, 0),
              "muted-foreground": (0.705, 0.015, 286.067), "accent": (0.274, 0.006, 286.033),
              "accent-foreground": (0.985, 0, 0), "ring": (0.552, 0.016, 285.938),
-             "strong": (0.37, 0.013, 285.805)},   # chart-4: iz / boş çubuk tonu
+             "strong": (0.37, 0.013, 285.805)},   # chart-4: track / empty bar tone
 }
 SHADCN_RADIUS = 10  # --radius: 0.625rem
 
 
 def build_shadcn(light, accent=None):
-    """shadcn/ui 'zinc' teması (nötr). accent (ton, doygunluk) verilirse birincil renk o olur
-    (shadcn'in renkli temaları gibi), yoksa siyah/beyaz."""
+    """shadcn/ui 'zinc' theme (neutral). If accent (hue, saturation) is given it becomes the primary
+    color (like shadcn's colored themes), otherwise black/white."""
     t = {k: oklch(*v) for k, v in SHADCN_ZINC["light" if light else "dark"].items()}
-    if not light:  # koyu temada kenarlık: beyaz %10 (kart zemininin üstünde)
+    if not light:  # dark theme border: white 10% (on top of the card background)
         t["border"] = mix(t["card"], (255, 255, 255), 0.10)
     p = {"surface": t["card"], "surface_high": t["secondary"], "surface_highest": t["strong"],
          "on_surface": t["foreground"], "on_surface_variant": t["muted-foreground"],
@@ -1081,7 +1081,7 @@ def build_shadcn(light, accent=None):
          "border": t["border"], "primary_container": t["accent"],
          "on_primary_container": t["accent-foreground"], "secondary_container": t["secondary"],
          "on_secondary_container": t["secondary-foreground"]}
-    if accent is not None and accent[1] > 0.05:  # renkli tema (ör. shadcn 'blue', 'rose')
+    if accent is not None and accent[1] > 0.05:  # colored theme (e.g. shadcn 'blue', 'rose')
         h, s = accent
         p["primary"] = tuple(round(c * 255) for c in colorsys.hls_to_rgb(
             h, 0.62 if not light else 0.48, min(0.85, max(0.55, s))))
@@ -1089,8 +1089,8 @@ def build_shadcn(light, accent=None):
     return p
 
 
-# Neumorphic (soft UI): sabit palet. Açık: pastel geçişli beyazımsı; koyu: kömür grisi.
-# Düğmeler kart renginde, derinliği iki yumuşak gölge verir. Vurgu: yumuşak yeşil.
+# Neumorphic (soft UI): fixed palette. Light: pastel-gradient off-white; dark: charcoal.
+# Buttons are card colored, depth comes from two soft shadows. Accent: soft green.
 NEU = {
     "dark": {"surface": "#2b2d31", "surface_high": "#2b2d31", "surface_highest": "#232528",
              "secondary_container": "#2e3035", "on_secondary_container": "#e6e7e9",
@@ -1103,7 +1103,7 @@ NEU = {
               "primary": "#6aa77d", "on_primary": "#ffffff", "on_surface": "#3a3f44",
               "on_surface_variant": "#7d848a", "outline": "#a3a9ae", "border": "#dde1e4"},
 }
-NEU_GRAD = {"light": ("#edf6f1", "#f7eef1"), "dark": ("#303237", "#26282c")}  # sol üst → sağ alt
+NEU_GRAD = {"light": ("#edf6f1", "#f7eef1"), "dark": ("#303237", "#26282c")}  # top left → bottom right
 
 
 def build_neu(light):
@@ -1118,7 +1118,7 @@ def mix_scheme(a, b, t):
     return {k: mix(a[k], b[k], t) for k in a}
 
 
-# ------------------------------------------------------------------ çizim
+# ------------------------------------------------------------------ drawing
 _mask_cache = {}
 
 
@@ -1141,31 +1141,31 @@ def _rr_mask(w, h, fx0, fy0, fx1, fy1, r, ellipse=False):
     return m
 
 
-# Tasarım dili: "material" (Material You: büyük yuvarlaklar, tonal dolgular) ya da
-# "shadcn" (shadcn/ui: nötr renkler, ince kenarlıklar, küçük köşeler). shadcn'de rr()
-# köşeleri sınırlar ve düğme boyutundaki daireleri köşeli-yuvarlak kareye çevirir.
+# Design language: "material" (Material You: big radii, tonal fills),
+# "shadcn" (shadcn/ui: neutral colors, thin borders, small corners) or "neu". In shadcn rr()
+# caps the corners and turns button-sized circles into rounded squares.
 STYLE = {"shad": False, "neu": False, "r": 0.0, "btn": 0.0}
 
 
 def set_style(name, S):
     STYLE["shad"] = name == "shadcn"
     STYLE["neu"] = name == "neu"
-    STYLE["r"] = 10.0 * S     # en büyük köşe yarıçapı: shadcn --radius 0.625rem
-    STYLE["btn"] = 30.0 * S   # bundan büyük daireler düğmedir: kareleştir
+    STYLE["r"] = 10.0 * S     # largest corner radius: shadcn --radius 0.625rem
+    STYLE["btn"] = 30.0 * S   # circles bigger than this are buttons: make them square
 
 
 def rr(img, x0, y0, x1, y1, r, color, alpha=255, ellipse=False, plain=False):
-    """Kenarları yumuşatılmış yuvarlak dikdörtgen (fiziksel piksel)."""
+    """Anti-aliased rounded rectangle (physical pixels)."""
     if x1 - x0 < 0.5 or y1 - y0 < 0.5:
         return
     if STYLE["shad"]:
         if ellipse and (x1 - x0) >= STYLE["btn"] and abs((x1 - x0) - (y1 - y0)) < 1:
-            ellipse, r = False, STYLE["r"] * 0.8   # düğmeler: rounded-md (radius - 2px)
+            ellipse, r = False, STYLE["r"] * 0.8   # buttons: rounded-md (radius - 2px)
         elif not ellipse:
             r = min(r, STYLE["r"])
     if (STYLE["neu"] and not plain and ellipse and alpha == 255
             and (x1 - x0) >= STYLE["btn"] * 1.2 and abs((x1 - x0) - (y1 - y0)) < 1):
-        neu_btn(img, x0, y0, x1, y1, 0, color, ellipse=True)   # yuvarlak düğmeler: kabarık
+        neu_btn(img, x0, y0, x1, y1, 0, color, ellipse=True)   # round buttons: raised
         return
     r = max(0.0, min(r, (x1 - x0) / 2, (y1 - y0) / 2))
     ix0, iy0 = max(0, int(math.floor(x0))), max(0, int(math.floor(y0)))
@@ -1186,8 +1186,8 @@ _neu_cache = {}
 
 
 def neu_raise(img, x0, y0, x1, y1, r, ellipse=False):
-    """Neumorphic yumuşak gölge: sol üstte açık, sağ altta koyu. Gölge yalnızca img'de zaten
-    dolu (opak) piksellere düşer; kartın dışına / şeffaf alana taşmaz."""
+    """Neumorphic soft shadow: light at top left, dark at bottom right. The shadow only lands on
+    pixels already filled (opaque) in img; it never spills outside the card / into transparency."""
     from PIL import ImageChops, ImageFilter
     w, h = max(1, round(x1 - x0)), max(1, round(y1 - y0))
     dd = max(2.0, min(w, h) * 0.09)
@@ -1218,14 +1218,14 @@ def neu_raise(img, x0, y0, x1, y1, r, ellipse=False):
 
 
 def _grad(w, h, top, bot, diag=False):
-    """Dikey (diag: sol üstten sağ alta) renk geçişi, RGBA."""
+    """Vertical (diag: top left to bottom right) color gradient, RGBA."""
     key = ("g", w, h, top, bot, diag)
     g = _neu_cache.get(key)
     if g is None:
         from PIL import ImageChops
         v = Image.linear_gradient("L").resize((w, h))
         if diag:
-            hz = Image.linear_gradient("L").rotate(90).resize((w, h))  # solda 0, sağda 255
+            hz = Image.linear_gradient("L").rotate(90).resize((w, h))  # 0 on the left, 255 on the right
             v = ImageChops.add(v, hz, scale=2)
         g = Image.composite(Image.new("RGBA", (w, h), tuple(bot) + (255,)),
                             Image.new("RGBA", (w, h), tuple(top) + (255,)), v)
@@ -1236,7 +1236,7 @@ def _grad(w, h, top, bot, diag=False):
 
 
 def grad_rr(img, x0, y0, x1, y1, r, top, bot, ellipse=False, diag=False):
-    """Renk geçişli yuvarlak dikdörtgen / daire (fiziksel piksel)."""
+    """Gradient-filled rounded rectangle / circle (physical pixels)."""
     ix0, iy0 = int(math.floor(x0)), int(math.floor(y0))
     w, h = int(math.ceil(x1)) - ix0, int(math.ceil(y1)) - iy0
     if w <= 0 or h <= 0:
@@ -1248,8 +1248,8 @@ def grad_rr(img, x0, y0, x1, y1, r, top, bot, ellipse=False, diag=False):
 
 
 def neu_btn(img, x0, y0, x1, y1, r, color, ellipse=False):
-    """Soft UI düğmesi: kart renginde gövde, iki yumuşak gölgeyle kabarık; kenarlık yok.
-    color: gövde tonu (hover / basılı renkleri korunur)."""
+    """Soft UI button: card-colored body, raised by two soft shadows; no border.
+    color: body tone (hover / pressed tints are kept)."""
     neu_raise(img, x0, y0, x1, y1, r, ellipse)
     grad_rr(img, x0, y0, x1, y1, r, mix(color, (255, 255, 255), 0.06),
             mix(color, (0, 0, 0), 0.04), ellipse)
@@ -1267,25 +1267,25 @@ def rounded_image(src, size, radius):
     return img
 
 
-# ---- çok dilli yazı: ana yazı tipinde olmayan karakterler için yedek yazı tipleri
-# (normal dosya, kalın dosya, etiket)
+# ---- multilingual text: fallback fonts for characters missing in the main font
+# (regular file, bold file, tag)
 FALLBACK_FONTS = [
-    ("YuGothM.ttc", "YuGothB.ttc", "jp"),      # Japonca
+    ("YuGothM.ttc", "YuGothB.ttc", "jp"),      # Japanese
     ("msgothic.ttc", "msgothic.ttc", "jp"),
-    ("malgun.ttf", "malgunbd.ttf", "kr"),      # Korece
-    ("msyh.ttc", "msyhbd.ttc", "sc"),          # Çince (basitleştirilmiş)
-    ("msjh.ttc", "msjhbd.ttc", "tc"),          # Çince (geleneksel)
+    ("malgun.ttf", "malgunbd.ttf", "kr"),      # Korean
+    ("msyh.ttc", "msyhbd.ttc", "sc"),          # Chinese (simplified)
+    ("msjh.ttc", "msjhbd.ttc", "tc"),          # Chinese (traditional)
     ("simsun.ttc", "simsun.ttc", "sc"),
-    ("LeelawUI.ttf", "LeelawUI.ttf", "th"),    # Tayca vb.
-    ("Nirmala.ttc", "Nirmala.ttc", "in"),      # Hint yazıları
-    ("seguisym.ttf", "seguisym.ttf", "sym"),   # semboller
+    ("LeelawUI.ttf", "LeelawUI.ttf", "th"),    # Thai etc.
+    ("Nirmala.ttc", "Nirmala.ttc", "in"),      # Indic scripts
+    ("seguisym.ttf", "seguisym.ttf", "sym"),   # symbols
     ("seguiemj.ttf", "seguiemj.ttf", "emoji"),  # emoji
 ]
 _coverage = {}
 
 
 def font_coverage(filename):
-    """Yazı tipinin desteklediği Unicode kod noktaları."""
+    """Unicode code points supported by the font."""
     cov = _coverage.get(filename)
     if cov is None:
         try:
@@ -1293,7 +1293,7 @@ def font_coverage(filename):
             cov = frozenset(f.getBestCmap() or ())
             f.close()
         except Exception as e:  # noqa: BLE001
-            log("yazı tipi okunamadı:", filename, repr(e))
+            log("could not read font:", filename, repr(e))
             cov = frozenset()
         _coverage[filename] = cov
     return cov
@@ -1305,18 +1305,18 @@ def _fallback_order(text):
                      or 0x3130 <= ord(c) <= 0x318F for c in text)
     first = "jp" if has_kana else "kr" if has_hangul else "sc"
     idx = list(range(len(FALLBACK_FONTS)))
-    idx.sort(key=lambda i: 0 if FALLBACK_FONTS[i][2] == first else 1)  # kararlı sıralama
+    idx.sort(key=lambda i: 0 if FALLBACK_FONTS[i][2] == first else 1)  # stable sort
     return idx
 
 
-# uygulamayla gelen yazı tipleri (Geist, OFL-1.1: github.com/vercel/geist-font)
+# bundled fonts (Geist, OFL-1.1: github.com/vercel/geist-font)
 BUNDLED_FONTS = os.path.join(getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__))),
                              "fonts")
 _GEIST = {"segoeui.ttf": "Geist-Regular.ttf", "seguisb.ttf": "Geist-SemiBold.ttf"}
 
 
 def ui_font(name):
-    """Seçili tasarım diline göre yazı tipi dosyası (shadcn/ui: Geist, Material: Segoe UI)."""
+    """Font file for the selected design language (shadcn/ui: Geist, Material: Segoe UI)."""
     if STYLE["shad"] and name in _GEIST:
         p = os.path.join(BUNDLED_FONTS, _GEIST[name])
         if os.path.exists(p):
@@ -1325,12 +1325,12 @@ def ui_font(name):
 
 
 class TextFont:
-    """Eksik karakterleri yedek yazı tiplerinden tamamlayan yazı tipi."""
+    """Font that fills in missing characters from fallback fonts."""
 
     def __init__(self, filename, px, scale, bold=False):
         self.size = max(6, round(px * scale))
         self.bold = bold
-        filename = ui_font(filename)  # shadcn temasında Segoe yerine Geist
+        filename = ui_font(filename)  # Geist instead of Segoe in the shadcn theme
         if not os.path.exists(os.path.join(FONT_DIR, filename)):
             filename = "segoeui.ttf"
         self.filename = filename
@@ -1357,11 +1357,11 @@ class TextFont:
             return r
         pcov = font_coverage(self.filename)
         order = None
-        out = []  # [yazı tipi indeksi (-1 = ana), metin]
+        out = []  # [font index (-1 = main), text]
         for ch in text:
             cp = ord(ch)
             if cp in (0xFE0E, 0xFE0F, 0x200B, 0x200D):
-                continue  # görünmez birleştiriciler
+                continue  # invisible joiners
             if out and unicodedata.combining(ch):
                 out[-1][1] += ch
                 continue
@@ -1370,7 +1370,7 @@ class TextFont:
                 if order is None:
                     order = _fallback_order(text)
                 cand = order
-                if cp >= 0x1F000:  # emoji önce renkli yazı tipinden
+                if cp >= 0x1F000:  # emoji from the color font first
                     cand = sorted(order, key=lambda i: FALLBACK_FONTS[i][2] != "emoji")
                 for i in cand:
                     reg, bold, _tag = FALLBACK_FONTS[i]
@@ -1409,7 +1409,7 @@ class TextFont:
 
 
 class Drawer:
-    """ImageDraw sarmalayıcı: TextFont ile yazılan metinleri yedek yazı tipleriyle çizer."""
+    """ImageDraw wrapper: draws TextFont text with fallback fonts."""
 
     def __init__(self, img):
         self.d = ImageDraw.Draw(img)
@@ -1436,8 +1436,8 @@ def fit_text(text, font, maxw):
 
 
 def wrap_text(text, font, maxw, maxlines):
-    # Parçalar: boşlukla ayrılmış kelimeler; Japonca/Çince'de her karakter ayrı bölünebilir
-    tokens = []  # (metin, önünde boşluk var mı)
+    # Tokens: space-separated words; in Japanese/Chinese any character may break
+    tokens = []  # (text, preceded by a space)
     for wi, word in enumerate(text.split()):
         buf, first = "", True
         for ch in word:
@@ -1485,7 +1485,7 @@ def to_seconds(v):
     return float(v) / 10_000_000
 
 
-# ------------------------------------------------------------------ medya (GSMTC)
+# ------------------------------------------------------------------ media (GSMTC)
 class MediaWorker:
     def __init__(self):
         self.loop = asyncio.new_event_loop()
@@ -1495,7 +1495,7 @@ class MediaWorker:
         self.session = None
         self._last_track = None
         self._wake = None
-        self.fast_until = 0.0   # bu zamana kadar durumu 0,1 sn'de bir oku
+        self.fast_until = 0.0   # poll state every 0.1 s until this time
         threading.Thread(target=self._run, daemon=True).start()
 
     def _run(self):
@@ -1569,11 +1569,11 @@ class MediaWorker:
             try:
                 await self._poll_once()
             except Exception as e:  # noqa: BLE001
-                log("medya hatası:", repr(e))
+                log("media error:", repr(e))
                 with self.lock:
                     self.state = {"ok": False}
                 self.manager = None
-            # komuttan hemen sonra (şarkı atlama vb.) durumu sık oku: değişiklik hemen görünsün
+            # right after a command (skip etc.) poll often so the change shows at once
             fast = time.monotonic() < self.fast_until
             try:
                 await asyncio.wait_for(self._wake.wait(), 0.1 if fast else 1.0)
@@ -1588,7 +1588,7 @@ class MediaWorker:
         return st
 
     def command(self, name, arg=None):
-        # atlama sayısı kadar uzat: her atlama ~0,3 sn sürüyor
+        # extend by the number of skips: each skip takes ~0.3 s
         n = arg if name == "skip_n" and isinstance(arg, int) else 1
         self.fast_until = time.monotonic() + 2.5 + 0.3 * n
 
@@ -1618,29 +1618,29 @@ class MediaWorker:
                         await s.try_skip_next_async()
                         await asyncio.sleep(0.25)
             except Exception as e:  # noqa: BLE001
-                log("komut hatası:", name, repr(e))
+                log("command error:", name, repr(e))
             await asyncio.sleep(0.15)
             self._wake.set()
 
         asyncio.run_coroutine_threadsafe(go(), self.loop)
 
 
-# ------------------------------------------------------------------ ağ: geçici hatalarda tekrar dene
+# ------------------------------------------------------------------ network: retry on transient errors
 _TRANSIENT = (urllib.error.URLError, http.client.RemoteDisconnected, http.client.IncompleteRead,
               ConnectionError, TimeoutError, ssl.SSLError)
 
 
 def is_transient(e):
-    """İnternetin anlık gidip gelmesinden kaynaklanan hata mı (tekrar denemeye değer)?"""
+    """Is this a brief connection drop (worth retrying)?"""
     if isinstance(e, urllib.error.HTTPError):
-        return e.code in (500, 502, 503, 504)  # sunucu tarafında geçici sorun
+        return e.code in (500, 502, 503, 504)  # temporary server-side problem
     return isinstance(e, _TRANSIENT)
 
 
 def http_read(req, timeout=15, tries=2, idempotent=True):
-    """İsteği gönderip gövdeyi döndürür; bağlantı koparsa / zaman aşımında kısa bir beklemeyle
-    tekrar dener. İki kez gönderilmesi sorun olan istekler (idempotent=False) sadece sunucu
-    isteği hiç almadıysa (bağlantı kurulamadı) tekrarlanır. HTTPError olduğu gibi yükseltilir."""
+    """Send the request and return the body; on a dropped connection / timeout retry after a short
+    wait. Requests that must not be sent twice (idempotent=False) are only retried if the server
+    never received them (connection failed). HTTPError is raised as is."""
     for i in range(tries):
         try:
             with urllib.request.urlopen(req, timeout=timeout) as r:
@@ -1648,7 +1648,7 @@ def http_read(req, timeout=15, tries=2, idempotent=True):
         except Exception as e:  # noqa: BLE001
             retry = is_transient(e)
             if retry and not idempotent:
-                # sadece bağlantı hiç kurulamadıysa güvenli (ör. DNS hatası, bağlantı reddi)
+                # only safe if the connection never opened (e.g. DNS error, connection refused)
                 import socket
                 reason = getattr(e, "reason", None)
                 retry = not isinstance(e, urllib.error.HTTPError) and isinstance(
@@ -1658,9 +1658,9 @@ def http_read(req, timeout=15, tries=2, idempotent=True):
             time.sleep(0.8 * (i + 1))
 
 
-# ------------------------------------------------------------------ şarkı sözleri (LRCLIB)
+# ------------------------------------------------------------------ lyrics (LRCLIB)
 class Lyrics:
-    """lrclib.net'ten senkronize sözler. lines(): [(saniye ya da None, metin)]."""
+    """Synced lyrics from lrclib.net. lines(): [(seconds or None, text)]."""
 
     def __init__(self):
         self.lock = threading.Lock()
@@ -1680,7 +1680,7 @@ class Lyrics:
         if not title:
             return
         if key == self.key:
-            # hata aldıysa (ör. internet gitti) bir süre sonra kendiliğinden tekrar dene
+            # on error (e.g. offline) retry by itself after a while
             if self.state != "err" or time.monotonic() < getattr(self, "retry_at", 0):
                 return
         self.key = key
@@ -1742,8 +1742,8 @@ class Lyrics:
                 res = found[0] if found else None
         except Exception as e:  # noqa: BLE001
             if not is_transient(e):
-                log("sözler alınamadı:", repr(e))
-            self.retry_at = time.monotonic() + 20  # önbelleğe alma: 20 sn sonra tekrar dene
+                log("could not fetch lyrics:", repr(e))
+            self.retry_at = time.monotonic() + 20  # don't cache: retry in 20 s
             self._apply(key, "err", False, [])
             return
         if not res:
@@ -1762,7 +1762,7 @@ class Lyrics:
         self._apply(key, *r)
 
 
-# ------------------------------------------------------------------ Spotify Web API (sıradaki)
+# ------------------------------------------------------------------ Spotify Web API (queue)
 class SpotifyWeb:
     def __init__(self, cfg):
         self.cfg = cfg
@@ -1775,13 +1775,13 @@ class SpotifyWeb:
         self.track_key = None
         self.playing = False
         self.thumbs = {}
-        self.current = None  # çalan şarkının kimliği, sanatçı / albüm bağlantıları
-        self.liked = {}      # şarkı kimliği -> beğenildi mi
-        self.liked_t = {}    # şarkı kimliği -> son kontrol zamanı
+        self.current = None  # current track id, artist / album links
+        self.liked = {}      # track id -> liked?
+        self.liked_t = {}    # track id -> last check time
         self.auth_status = None
         self.auth_error = False
-        self.net_down = False   # bağlantı kesintisi sürüyor mu (log tekrarını önler)
-        self._again = 0.0       # şarkı değişiminden sonra ikinci yenileme zamanı
+        self.net_down = False   # is a connection outage ongoing (avoids repeated log lines)
+        self._again = 0.0       # second refresh time after a track change
         self.wake = threading.Event()
         threading.Thread(target=self._run, daemon=True).start()
 
@@ -1835,10 +1835,10 @@ class SpotifyWeb:
             self.cfg["refresh_token"] = r["refresh_token"]
             changed = True
         if r.get("scope") is not None and r["scope"] != self.cfg.get("scopes"):
-            # Spotify verilen izinleri bildirir: Beğen için izin var mı buradan anlaşılır
+            # Spotify reports granted scopes: tells whether Like is permitted
             self.cfg["scopes"] = r["scope"]
             changed = True
-            log("Spotify izinleri:", r["scope"])
+            log("Spotify scopes:", r["scope"])
         if changed:
             self.cfg.save()
 
@@ -1853,14 +1853,14 @@ class SpotifyWeb:
             data = b""
         req = urllib.request.Request("https://api.spotify.com/v1" + path, method=method,
                                      headers=headers, data=data)
-        # POST (sıraya ekleme) iki kez gitmesin: sadece bağlantı hiç kurulamadıysa tekrarla
+        # don't send POST (add to queue) twice: retry only if the connection never opened
         raw = http_read(req, timeout=15, idempotent=method != "POST")
         try:
             return json.loads(raw.decode()) if raw else {}
         except ValueError:
             return {}
 
-    # -- arama, çalma, sıra, cihazlar
+    # -- search, playback, queue, devices
     @property
     def has_control(self):
         return "user-modify-playback-state" in (self.cfg.get("scopes") or "")
@@ -1893,13 +1893,13 @@ class SpotifyWeb:
     def transfer(self, device_id):
         self._api("/me/player", "PUT", {"device_ids": [device_id], "play": True})
 
-    # -- Beğen (kütüphane)
+    # -- Like (library)
     @property
     def has_library(self):
         return "user-library-modify" in (self.cfg.get("scopes") or "")
 
     def _library(self, tid, method):
-        """Kütüphane uç noktası (eski /me/tracks 403 veriyor, URI tabanlı yenisi kullanılır)."""
+        """Library endpoint (old /me/tracks returns 403, the new URI-based one is used)."""
         uri =urllib.parse.quote("spotify:track:" + tid)
         path = "/me/library/contains?uris=" if method == "CHECK" else "/me/library?uris="
         return self._api(path + uri, "GET" if method == "CHECK" else method)
@@ -1919,15 +1919,15 @@ class SpotifyWeb:
                 body = e.read().decode(errors="replace")[:200]
             except Exception:  # noqa: BLE001
                 pass
-            log("beğeni durumu okunamadı:", e.code, body)
-            if e.code == 403:  # izin yok: yeniden bağlanmak gerekir
+            log("could not read like state:", e.code, body)
+            if e.code == 403:  # no permission: reconnect needed
                 self.cfg["scopes"] = ""
         except Exception as e:  # noqa: BLE001
-            if not is_transient(e):  # bağlantı kopmalarını ana döngü bir kez bildirir
-                log("beğeni durumu okunamadı:", repr(e))
+            if not is_transient(e):  # connection drops are reported once by the main loop
+                log("could not read like state:", repr(e))
 
     def liked_state(self, title):
-        """Çalan şarkı (başlığa göre eşleşirse) beğenilmiş mi: True / False / None."""
+        """Is the current track (if the title matches) liked: True / False / None."""
         cur = self.current
         if not cur or not cur.get("id") or cur.get("name") != title:
             return None
@@ -1939,7 +1939,7 @@ class SpotifyWeb:
             return False
         tid = cur["id"]
         new = not self.liked.get(tid, False)
-        self.liked[tid] = new  # iyimser güncelleme
+        self.liked[tid] = new  # optimistic update
         with self.lock:
             self.version += 1
 
@@ -1947,7 +1947,7 @@ class SpotifyWeb:
             try:
                 self._library(tid, "PUT" if new else "DELETE")
             except Exception as e:  # noqa: BLE001
-                log("beğeni değiştirilemedi:", repr(e))
+                log("could not change like:", repr(e))
                 self.liked[tid] = not new
                 with self.lock:
                     self.version += 1
@@ -1958,12 +1958,12 @@ class SpotifyWeb:
     def _thumb(self, url):
         if not url or url in self.thumbs:
             return
-        if len(self.thumbs) > 60:  # sınırsız büyümesin; gereken kapak yeniden indirilir
+        if len(self.thumbs) > 60:  # don't grow unbounded; needed covers are downloaded again
             self.thumbs.clear()
         try:
             self.thumbs[url] = Image.open(io.BytesIO(http_read(url, timeout=10))).convert("RGB")
         except Exception as e:  # noqa: BLE001
-            if not is_transient(e):  # bağlantı koptuysa sonra tekrar denensin
+            if not is_transient(e):  # if the connection dropped, try again later
                 self.thumbs[url] = None
 
     def _fetch(self):
@@ -1989,7 +1989,7 @@ class SpotifyWeb:
             or (cp.get("show") or {}).get("uri"),
             "album_uri": (cp.get("album") or {}).get("uri"),
         }
-        # beğeni durumunu yenile (Spotify uygulamasında değiştirilmiş olabilir)
+        # refresh like state (may have changed in the Spotify app)
         if tid and self.has_library and time.time() - self.liked_t.get(tid, 0) > 30:
             self._check_liked(tid)
         items = []
@@ -2000,8 +2000,8 @@ class SpotifyWeb:
             else:
                 sub = ", ".join(a.get("name", "") for a in it.get("artists") or [])
                 imgs = (it.get("album") or {}).get("images") or []
-            # küçük kapak (64 px) liste için; seçilince anında gösterilecek büyük kapak için
-            # 300 px'lik olanı tercih et
+            # small cover (64 px) for the list; prefer the 300 px one for the big cover
+            # shown instantly when picked
             imgs = sorted(imgs, key=lambda i: i.get("width") or 9999)
             url = next((i["url"] for i in imgs if (i.get("width") or 0) >= 200), None) \
                 or (imgs[-1]["url"] if imgs else None)
@@ -2009,13 +2009,13 @@ class SpotifyWeb:
                           "url": url, "dur": (it.get("duration_ms") or 0) / 1000})
         old = [i["id"] for i in self.queue] if self.queue else None
         if old != [i["id"] for i in items] or self.error:
-            self._set(items, None)  # kapakları beklemeden listeyi göster
+            self._set(items, None)  # show the list without waiting for covers
         missing = [i["url"] for i in items if i["url"] and i["url"] not in self.thumbs]
         if missing:
             threading.Thread(target=self._load_thumbs, args=(missing,), daemon=True).start()
 
     def _load_thumbs(self, urls):
-        """Kapakları paralel indir; her biri gelince listeyi yeniden çizdir."""
+        """Download covers in parallel; redraw the list as each arrives."""
         from concurrent.futures import ThreadPoolExecutor
 
         def one(u):
@@ -2027,7 +2027,7 @@ class SpotifyWeb:
             list(ex.map(one, urls))
 
     def pop_queue(self, n):
-        """Sıradakilerden şarkı seçilince atlanan şarkıları listeden hemen çıkar."""
+        """When a track is picked from up next, drop the skipped tracks from the list at once."""
         with self.lock:
             if self.queue:
                 self.queue = self.queue[n:]
@@ -2044,8 +2044,8 @@ class SpotifyWeb:
             again = self._again and time.time() >= self._again
             if woke or again or time.time() - last > interval:
                 if woke:
-                    time.sleep(0.45)  # Spotify'ın sırayı güncellemesine izin ver
-                    self._again = time.time() + 2.5  # atlamalar bitince bir kez daha bak
+                    time.sleep(0.45)  # give Spotify time to update the queue
+                    self._again = time.time() + 2.5  # look once more after the skips finish
                 else:
                     self._again = 0.0
                 last = time.time()
@@ -2053,13 +2053,13 @@ class SpotifyWeb:
                     self._fetch()
                     if self.net_down:
                         self.net_down = False
-                        log("bağlantı geri geldi")
+                        log("connection is back")
                 except Exception as e:  # noqa: BLE001
                     if not is_transient(e):
-                        log("sıradaki listesi alınamadı:", repr(e))
-                    elif not self.net_down:  # kesinti boyunca tek satır
+                        log("could not fetch queue:", repr(e))
+                    elif not self.net_down:  # one line for the whole outage
                         self.net_down = True
-                        log("bağlantı sorunu, otomatik tekrar denenecek:", repr(e))
+                        log("connection problem, will retry automatically:", repr(e))
 
     # -- OAuth PKCE
     def start_auth(self, client_id):
@@ -2137,7 +2137,7 @@ class SpotifyWeb:
         self._set(None, None)
 
 
-# ------------------------------------------------------------------ uygulama
+# ------------------------------------------------------------------ app
 class App:
     def __init__(self):
         self.dpi = set_dpi_awareness()
@@ -2160,12 +2160,12 @@ class App:
         self.cfg.setdefault("accent", "auto")
         self.cfg.setdefault("bg", "solid")
         self.cfg.setdefault("fps", 60)
-        self.cfg.setdefault("ui", "material")   # tasarım dili: material / shadcn
-        self.cfg.setdefault("memory", True)     # günlük "geçen yıl bugün" hatırlatması
-        self.cfg.setdefault("startup", True)    # Windows açılışında başlat (varsayılan açık)
+        self.cfg.setdefault("ui", "material")   # design language: material / shadcn / neu
+        self.cfg.setdefault("memory", True)     # daily "on this day last year" reminder
+        self.cfg.setdefault("startup", True)    # launch at Windows startup (on by default)
         if FROZEN and self.cfg["startup"]:
-            # sadece exe: kaydı her açılışta yenile (exe taşındıysa yeni yolu yazar).
-            # Geliştirme / test kopyaları kullanıcının başlangıç kaydına dokunmasın.
+            # exe only: refresh the entry on every launch (writes the new path if the exe moved).
+            # Dev / test copies must not touch the user's startup entry.
             self._set_startup(True)
         self._start_t = time.monotonic()
         self.cfg.setdefault("react", True)
@@ -2173,50 +2173,50 @@ class App:
         self.cfg.setdefault("osd", True)
         self.cfg.setdefault("duck_apps", ["discord.exe"])
         self.cfg.setdefault("alarm", {"on": False, "time": "08:00"})
-        self.level = 0.0          # Spotify'ın anlık ses seviyesi (0..1, son saniyelere göre)
+        self.level = 0.0          # Spotify's current output level (0..1, relative to the last few seconds)
         self._lvl_lo = self._lvl_hi = None
-        self._duck = None         # kısılmışken: {"orig": ses, "last": son konuşma zamanı}
+        self._duck = None         # while ducked: {"orig": volume, "last": last speech time}
         self._duck_fade = None
         self._alarm_day = None
         self._alarm_fade = None
         self.cfg.setdefault("stats_period", "7")
         self.cfg.setdefault("stats_list", "artists")
         self.stats = self._load_stats()
-        self.imported = load_imported_history()   # Spotify'dan içe aktarılan geçmiş
+        self.imported = load_imported_history()   # history imported from Spotify
         self.import_ver = 0
         self._index_imported()
         self._stat_t = None
         self._stat_saved = time.monotonic()
-        self._glass = {}         # bulanık duvar kağıdı önbelleği
+        self._glass = {}         # blurred wallpaper cache
         self.glass_ver = 0
         global LANG
         LANG = self.cfg.setdefault("lang", default_lang())
         self.history = self._load_history()
-        self.hist_off = 0   # Geçmiş listesinin kaydırma konumu
+        self.hist_off = 0   # History list scroll offset
         self._hist_thumbs = {}
-        self._toast_key = None       # son bildirimi gösterilen şarkı
-        self._seen_first = False     # açılıştaki ilk şarkı için bildirim gösterme
+        self._toast_key = None       # last track a toast was shown for
+        self._seen_first = False     # no toast for the first track at launch
         self.inside = False
         self._alpha_job = None
         self._leave_job = None
         self.mini = bool(self.cfg["mini"])
         self.art_mini = None
-        # ses
+        # audio
         self.volume = AppVolume()
         self.vol_val = None
         self.vol_until = 0.0
-        # klavye kısayolları
+        # hotkeys
         self.hk_queue = []
         self.hotkeys = Hotkeys(self.hk_queue)
         if self.cfg["hotkeys"]:
             self.hotkeys.start()
-        # uyku zamanlayıcısı
+        # sleep timer
         self.sleep_end = None
         self.sleep_fade = None
         self.sleep_choice = 0
 
-        # pencere en büyük boyuta göre açılır; içerik seçilen ölçekte sol üste çizilir,
-        # kalan şeffaf alan tıklamaları masaüstüne geçirir
+        # the window opens at the largest size; content is drawn top-left at the chosen scale,
+        # the remaining transparent area passes clicks through to the desktop
         self.WMAX = round(W * self.dpi * SCALE_MAX)
         self.HMAX = round(TOTAL_H * self.dpi * SCALE_MAX)
         icon_file = "SegoeIcons.ttf" if os.path.exists(
@@ -2233,7 +2233,7 @@ class App:
         self.web = SpotifyWeb(self.cfg)
         self.lyrics = Lyrics()
 
-        # durum
+        # state
         self.light = self._is_light()
         self.seed = DEFAULT_SEED
         self.pal = self._scheme()
@@ -2249,7 +2249,7 @@ class App:
         self.base_key = None
         self.base_strip = None
         self.strip_key = None
-        self.marq = None        # mini modda kayan şarkı adı
+        self.marq = None        # scrolling title in mini mode
         self.marq_key = None
         self.amp = 0.0
         self.phase = 0.0
@@ -2261,14 +2261,14 @@ class App:
         self.last_t = time.monotonic()
         self.last_theme_check = 0.0
         self.st = {"ok": False}
-        self.pending = None   # sıradakilerden seçilen, Spotify'ın henüz onaylamadığı şarkı
-        self._morph = None    # mini ↔ normal geçiş animasyonu
+        self.pending = None   # track picked from up next that Spotify hasn't confirmed yet
+        self._morph = None    # mini ↔ normal transition animation
         self._anchor = {"bottom": False, "deferred": None}
         self.last = None
         self._last_saved = 0.0
         self._load_last()
 
-        # pencere
+        # window
         self.root = tk.Tk()
         self.root.title("Spotify Widget")
         self.root.report_callback_exception = lambda *a: log(
@@ -2285,7 +2285,7 @@ class App:
         sw, sh = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
         x = self.cfg.get("x", sw - self.WP - round(32 * S))
         y = self.cfg.get("y", round(48 * S))
-        # ekran dışında kalmışsa geri getir
+        # bring it back if off screen
         x = max(0, min(int(x), sw - round(120 * S)))
         y = max(0, min(int(y), sh - round(120 * S)))
         move_window(self.hwnd, x, y)
@@ -2304,7 +2304,7 @@ class App:
         self.root.after(30, self._tick)
         self.root.after(1500, self._keep_z)
 
-    # ---------------- son çalınanlar (yerel geçmiş)
+    # ---------------- recently played (local history)
     HISTORY_PATH = os.path.join(APP_DIR, "history.json")
     HISTORY_MAX = 50
 
@@ -2336,10 +2336,10 @@ class App:
         try:
             save_json(self.HISTORY_PATH, self.history, ensure_ascii=False)
         except Exception as e:  # noqa: BLE001
-            log("geçmiş kaydedilemedi:", repr(e))
+            log("could not save history:", repr(e))
 
     def _recent_all(self):
-        """Şu an gösterilen şarkı hariç tüm son çalınanlar (en yeni üstte)."""
+        """All recently played except the track on screen (newest first)."""
         v = self._view()
         cur = (v.get("title"), v.get("artist"))
         return [h for h in self.history if (h["title"], h["artist"]) != cur]
@@ -2348,8 +2348,8 @@ class App:
         return self._recent_all()[:rows]
 
     def _recent_rows(self, rows):
-        """Geçmiş sekmesinde görünen satırlar (fare tekerleğiyle kaydırılır).
-        Her satır: title, sub, thumb, right, q (Spotify'da aranacak metin)."""
+        """Rows visible in the History tab (scrolled with the mouse wheel).
+        Each row: title, sub, thumb, right, q (text to search in Spotify)."""
         items = self._recent_all()
         self.hist_off = max(0, min(self.hist_off, len(items) - rows))
         return [{"title": h["title"], "sub": h["artist"], "thumb": self._hist_thumb(h),
@@ -2370,21 +2370,21 @@ class App:
             self._hist_thumbs[key] = th
         return th
 
-    # ---------------- dil
+    # ---------------- language
     def _set_lang(self, code):
         global LANG
         LANG = code
         self._set("lang", code)
         self._render_all()
 
-    # ---------------- boyut
+    # ---------------- size
     def _apply_scale(self):
         sc = max(SCALE_MIN, min(SCALE_MAX, float(self.cfg["scale"])))
         self.S = S = self.dpi * sc
         set_style(self.cfg.get("ui", "material"), S)
         self._hist_thumbs = {}
         self.WP, self.HP = round(W * S), round(TOTAL_H * S)
-        if self.mini:  # ince ilerleme çizgisinin bulunduğu şerit
+        if self.mini:  # strip holding the thin progress line
             self.sy0 = round((MINI_BAR_Y - 4) * S)
             self.sh = round((MINI_BAR_Y + 4) * S) - self.sy0
         else:
@@ -2426,7 +2426,7 @@ class App:
         self._apply_scale()
         self._render_all()
 
-    # ---------------- yardımcılar
+    # ---------------- helpers
     def icon_font(self, px):
         f = self._icon_fonts.get(px)
         if f is None:
@@ -2448,11 +2448,11 @@ class App:
             keep_bottom(self.hwnd)
         self.root.after(1500, self._keep_z)
 
-    # ---------------- fare üstündeyken opaklaşma
+    # ---------------- fade in on hover
     def _target_alpha(self):
-        pct = self.cfg["opacity"]  # fare üstündeyken (ve özellik kapalıyken) opaklık
+        pct = self.cfg["opacity"]  # opacity on hover (and when the feature is off)
         if self.cfg["hover_opaque"] and not self.inside:
-            pct = min(pct, self.cfg["idle_opacity"])  # fare uzaktayken soluklaş
+            pct = min(pct, self.cfg["idle_opacity"])  # fade out when the mouse is away
         return round(255 * pct / 100)
 
     def _set_inside(self, inside):
@@ -2464,7 +2464,7 @@ class App:
                 self.inside = True
                 self._alpha_step()
         elif self.inside:
-            # kartlar arasındaki boşluktan geçerken titremesin diye kısa gecikme
+            # short delay so it doesn't flicker when crossing the gap between cards
             self._leave_job = self.root.after(250, self._left)
 
     def _left(self):
@@ -2479,7 +2479,7 @@ class App:
         target, cur = self._target_alpha(), self.surface.alpha
         if cur == target:
             return
-        speed = 0.35 if target > cur else 0.18  # hızlı belirir, yavaş solar
+        speed = 0.35 if target > cur else 0.18  # appears fast, fades slowly
         nxt = cur + (target - cur) * speed
         nxt = target if abs(target - nxt) < 2 else round(nxt)
         if nxt == cur:
@@ -2490,7 +2490,7 @@ class App:
             self._alpha_job = self.root.after(16, self._alpha_step)
 
     def _open_entity(self, kind):
-        """Sanatçı / albüm sayfasını Spotify'da aç."""
+        """Open the artist / album page in Spotify."""
         st = self._view()
         if not st.get("title"):
             return
@@ -2499,7 +2499,7 @@ class App:
         if cur and cur.get("name") == st.get("title"):
             uri = cur.get(kind + "_uri")
         query = st["artist"] if kind == "artist" else f'{st["album"]} {st["artist"]}'
-        if not uri:  # hesap bağlı değilse: Spotify içinde arama
+        if not uri:  # no account linked: search inside Spotify
             uri = "spotify:search:" + urllib.parse.quote(query.strip())
         open_spotify(uri, "https://open.spotify.com/search/" + urllib.parse.quote(query))
 
@@ -2521,11 +2521,11 @@ class App:
                 return hid
         return None
 
-    # ---------------- zaman / konum
+    # ---------------- time / position
     def _position(self):
         st = self.st
         if not st.get("ok"):
-            if self.last:  # Spotify kapalı: son çalınan şarkının kaldığı yer
+            if self.last:  # Spotify closed: where the last played track stopped
                 return float(self.last.get("pos") or 0), float(self.last.get("end") or 0)
             return 0.0, 0.0
         pos, end = st["pos"], st["end"]
@@ -2551,8 +2551,8 @@ class App:
         self.play_hold = None
         return bool(self.st.get("playing"))
 
-    # ---------------- ana döngü
-    # ---------------- ses
+    # ---------------- main loop
+    # ---------------- volume
     def _change_volume(self, delta):
         v = self.volume.get()
         if v is None:
@@ -2560,7 +2560,7 @@ class App:
         self.vol_val = self.volume.set(round((v + delta) * 100) / 100)
         self.vol_until = time.monotonic() + 1.5
 
-    # ---------------- uyku zamanlayıcısı
+    # ---------------- sleep timer
     def _set_sleep(self, minutes):
         self._restore_sleep_volume()
         self.sleep_end = time.monotonic() + minutes * 60 if minutes else None
@@ -2578,7 +2578,7 @@ class App:
         self.sleep_choice = 0
         if self.st.get("ok") and self.st.get("playing"):
             self.media.command("pause")
-        if fade is not None:  # duraklattıktan sonra eski ses düzeyine dön
+        if fade is not None:  # after pausing, go back to the old volume
             self.root.after(1500, lambda: self.volume.set(fade))
         self.base_key = None
 
@@ -2587,7 +2587,7 @@ class App:
             return None
         return max(1, math.ceil((self.sleep_end - time.monotonic()) / 60))
 
-    # ---------------- mini mod
+    # ---------------- mini mode
     def _toggle_mini(self):
         def change():
             self.mini = not self.mini
@@ -2598,24 +2598,24 @@ class App:
         self._transition(change)
 
     def _transition(self, change, dur=None):
-        """Görünüm değişikliğini (mini, sekme, liste aç/kapa, dönem) animasyonla yap: kart boyu
-        sabit kenardan eskiden yeniye gider, eski ve yeni görünüm birbirine karışır.
-        change(): durumu değiştiren fonksiyon. Ara kareler hazır iki görüntüden üretilir."""
+        """Animate a view change (mini, tab, list open/close, period): the card size goes from
+        old to new from a fixed edge while the old and new views cross-fade.
+        change(): function that changes the state. In-between frames come from two ready images."""
         if self._morph:
             self._finish_morph()
         old, old_h = getattr(self, "_frame", None), getattr(self, "_shown_h", None)
         was_mini = self.mini
-        self._morph = "pending" if old is not None and old_h else None  # yeni kareyi basma
+        self._morph = "pending" if old is not None and old_h else None  # don't push the new frame
         try:
             change()
             self.base_key = None
             self._render_all()
         except Exception:
-            self._morph = None  # takılı "pending" kalırsa hiçbir kare basılmaz
+            self._morph = None  # if it gets stuck at "pending" no frame is pushed
             raise
         if self._morph != "pending":
             return
-        if self._frame is old:  # hiçbir şey değişmedi
+        if self._frame is old:  # nothing changed
             self._morph = None
             return
         new_h = self._shown_h
@@ -2634,13 +2634,13 @@ class App:
                        "dur": dur or (self.MORPH_S if was_mini != self.mini else 0.2)}
         self._morph_step()
 
-    MORPH_S = 0.26  # mini ↔ normal geçiş süresi (kart içi değişiklikler 0,2 sn)
-    # tıklanınca animasyonla değişen eylemler (sekme, liste aç/kapa, istatistik dönemi / listesi)
-    ANIMATED = ("tab_", "q", "sp_", "sl_", "sup", "sb")  # "q": liste aç/kapa + sıradakinden şarkı
+    MORPH_S = 0.26  # mini ↔ normal transition time (in-card changes 0.2 s)
+    # actions that animate on click (tab, list open/close, stats period / list)
+    ANIMATED = ("tab_", "q", "sp_", "sl_", "sup", "sb")  # "q": list open/close + track from up next
 
     def _morph_step(self):
-        """Geçiş karesi: kart boyu eskiden yeniye büyür/küçülür (sabit kenardan), iki görünüm
-        birbirine karışır. Bitince son kareyi normal yoldan bas."""
+        """Transition frame: the card grows/shrinks from old to new (from a fixed edge) while the
+        two views cross-fade. When done, push the final frame the normal way."""
         m = self._morph
         t = min(1.0, (time.monotonic() - m["t0"]) / m["dur"])
         e = 1 - (1 - t) ** 3
@@ -2648,7 +2648,7 @@ class App:
         h = m["oh"] + (m["nh"] - m["oh"]) * e
         top = H - h if m["bottom"] else 0.0
         frame = Image.blend(m["old"], m["new"], e)
-        # kesim maskesi: düz dikdörtgen + önbellekteki 4 köşe (her karede yeniden çizmek ~5 ms)
+        # clip mask: plain rect + 4 cached corners (redrawing every frame costs ~5 ms)
         r = round(m["r0"] + (m["r1"] - m["r0"]) * e)
         it, ib = int(round(top)), int(round(top + h))
         r = max(1, min(r, (ib - it) // 2, w // 2))
@@ -2663,7 +2663,7 @@ class App:
                        (cx if cx == 0 else w - r, it if cy == 0 else ib - r))
         from PIL import ImageChops
         frame.putalpha(ImageChops.multiply(frame.getchannel("A"), mask))
-        # büyürken pencere ilk karede (çizimle birlikte) yeni yerine geçer
+        # when growing, the window moves to its new place on the first frame (together with drawing)
         self.surface.full(frame, H + 2, self._take_move() if m["nh"] > m["oh"] else None)
         if t >= 1.0:
             self._finish_morph()
@@ -2677,7 +2677,7 @@ class App:
 
     def _finish_morph(self):
         m, self._morph = self._morph, None
-        if m:  # son kare hazır: baştan çizmeden bas; küçülürken pencere de şimdi taşınır
+        if m:  # final frame ready: push without redrawing; when shrinking the window moves now too
             self.surface.full(self._frame, round(self.content_h * self.S) + 4, self._take_move())
             self.strip_key = None
         elif self._anchor.get("deferred"):
@@ -2685,11 +2685,11 @@ class App:
 
     def _on_double(self, e):
         x, y = self._xy(e)
-        if self._hit(x, y):  # butona hızlı çift tıklama: normal tıklama gibi davran
+        if self._hit(x, y):  # fast double click on a button: treat as a normal click
             return self._on_press(e)
         self._toggle_mini()
 
-    # ---------------- son çalınan şarkı (Spotify kapalıyken gösterilir)
+    # ---------------- last played track (shown while Spotify is closed)
     def _load_last(self):
         try:
             with open(LAST_PATH, "r", encoding="utf-8") as f:
@@ -2706,7 +2706,7 @@ class App:
         except OSError:
             pass
         self._on_new_art(art)
-        self.pal = self.pal_to  # açılışta renk geçişi olmadan
+        self.pal = self.pal_to  # no color transition at launch
         self.pal_t = 1.0
 
     def _save_last(self, st, art_changed):
@@ -2724,11 +2724,11 @@ class App:
                 elif os.path.exists(LAST_ART_PATH):
                     os.remove(LAST_ART_PATH)
         except Exception as e:  # noqa: BLE001
-            log("son şarkı kaydedilemedi:", repr(e))
+            log("could not save last track:", repr(e))
 
     def _view(self):
-        """Ekranda gösterilecek şarkı: çalan şarkı ya da (Spotify kapalıysa) son çalınan.
-        Sıradakilerden şarkı seçilince Spotify onaylayana kadar seçilen şarkı gösterilir."""
+        """Track to show: the playing one or (if Spotify is closed) the last played.
+        When a track is picked from up next it's shown until Spotify confirms it."""
         if self.st.get("ok"):
             p = self.pending
             if p:
@@ -2744,7 +2744,7 @@ class App:
         interval = 200
         try:
             interval = self._tick_body()
-        finally:  # bir karede hata çıksa da döngü durmasın (hata report_callback_exception'a gider)
+        finally:  # keep the loop running even if a frame fails (error goes to report_callback_exception)
             work = (time.monotonic() - t0) * 1000
             self.root.after(max(1, int(interval - work)), self._tick)
 
@@ -2757,20 +2757,20 @@ class App:
         p = self.pending
         if p:
             if st.get("ok") and st.get("title") == p["title"]:
-                self.pending = None  # Spotify seçilen şarkıya geçti
+                self.pending = None  # Spotify switched to the picked track
             elif now > p["until"] or not st.get("ok"):
-                self.pending = None  # eşleşmedi / zaman aşımı: gerçek duruma dön
+                self.pending = None  # no match / timeout: back to the real state
                 if st.get("ok"):
-                    st = dict(st, art_changed=True)  # gerçek kapağı geri getir
+                    st = dict(st, art_changed=True)  # bring the real cover back
             else:
-                # atlama sürerken aradaki şarkıları gösterme (kapak / geçmiş / bildirim yok)
+                # while skipping don't show the tracks in between (no cover / history / toast)
                 st = dict(st)
                 st.pop("art_changed", None)
         if st.get("art_changed"):
             def change(st=st):
                 self.st = st
                 self._on_new_art(st.get("art"))
-            self._transition(change, dur=0.35)  # şarkı değişimi: eski görünümden yeniye geçiş
+            self._transition(change, dur=0.35)  # track change: transition from the old view to the new
         self.st = st
         playing = self._playing()
         self._stat_tick(now, st, playing)
@@ -2779,7 +2779,7 @@ class App:
         self._audio_tick(now, st, playing)
         self._alarm_tick(st)
         self._memory_tick(now, st, playing)
-        if st.get("ok") and not self.pending:  # atlama sürerken aradaki şarkılar için yenileme
+        if st.get("ok") and not self.pending:  # refresh for the tracks in between while skipping
             self.web.notify((st["title"], st["artist"]), playing)
             if st.get("title") and (st.get("art_changed") or self.last is None
                                     or self.last.get("title") != st["title"]
@@ -2796,7 +2796,7 @@ class App:
                     cnt[tkey] = cnt.get(tkey, 0) + 1
                 self._add_history(st)
                 key = (st["title"], st["artist"])
-                if not self._seen_first:  # açılıştaki şarkı: bildirim yok
+                if not self._seen_first:  # track at launch: no toast
                     self._seen_first = True
                     self._toast_key = key
                 elif key != self._toast_key:
@@ -2805,12 +2805,12 @@ class App:
                     show = self.cfg["notify"] and (fs is not None or (
                         self.cfg["mode"] == "desktop" and not self.inside))
                     if fs is not None or self.cfg.get("debug_toast"):
-                        # oyunda görünmezse sebebini bulabilmek için kısa tanı satırı
+                        # short diagnostic line to find out why it's hidden in games
                         log(f"bildirim: tam_ekran={fs is not None} gosterildi={bool(show)} {why}")
                     if show:
                         self.toast.show(st, fs)
 
-        # klavye kısayolları
+        # hotkeys
         while self.hk_queue:
             act = self.hk_queue.pop(0)
             if act == "vol+":
@@ -2827,7 +2827,7 @@ class App:
                 self._action(act)
             self._hotkey_osd(act)
 
-        # uyku zamanlayıcısı (son 20 saniyede ses yavaşça kısılır)
+        # sleep timer (volume fades out in the last 20 seconds)
         if self.sleep_end is not None:
             rem = self.sleep_end - now
             if rem <= 0:
@@ -2838,13 +2838,13 @@ class App:
                 if self.sleep_fade is not None:
                     self.volume.set(self.sleep_fade * rem / 20)
 
-        # güvence: <Leave> olayı kaçarsa imleç konumundan fark et
+        # safety net: if the <Leave> event is missed, notice it from the cursor position
         if self.inside and self._leave_job is None and self.drag_seek is None \
                 and not self.win_drag:
             pt, rc = wintypes.POINT(), wintypes.RECT()
             user32.GetCursorPos(ctypes.byref(pt))
             user32.GetWindowRect(self.hwnd, ctypes.byref(rc))
-            cw, ch = self.WP, round(self.content_h * self.S)  # görünen kısım
+            cw, ch = self.WP, round(self.content_h * self.S)  # visible part
             if not (rc.left <= pt.x < rc.left + cw and rc.top <= pt.y < rc.top + ch):
                 self._set_inside(False)
 
@@ -2861,24 +2861,24 @@ class App:
                     self.glass_ver += 1
 
         animating = False
-        # palet geçişi
+        # palette transition
         if self.pal_t < 1.0:
             self.pal_t = min(1.0, self.pal_t + dt / 0.5)
             e = 1 - (1 - self.pal_t) ** 3
             self.pal = mix_scheme(self.pal_from, self.pal_to, e)
             self.pal_version += 1
             animating = True
-        # oynat butonu şekil dönüşümü (duraklatıldı: köşeli, çalıyor: hap)
+        # play button shape morph (paused: squircle, playing: pill)
         target_r = 28.0 if playing else 16.0
         if abs(self.play_r - target_r) > 0.2:
             self.play_r += (target_r - self.play_r) * min(1.0, dt * 12)
             animating = True
         else:
             self.play_r = target_r
-        # dalga
+        # wave
         target_amp = AMP if (playing and self.cfg["wave"] and not self.mini) else 0.0
         react = bool(target_amp and self.cfg["react"])
-        if react:  # müziğe tepki: dalga yüksekliği sese göre (seviye zaten yumuşatılmış)
+        if react:  # react to music: wave height follows the volume (level is already smoothed)
             target_amp = AMP * (0.25 + 1.75 * self.level)
         if abs(self.amp - target_amp) > 0.05:
             self.amp += (target_amp - self.amp) * min(1.0, dt * (30 if react else 6))
@@ -2886,25 +2886,25 @@ class App:
         else:
             self.amp = target_amp
         if self.amp > 0.05:
-            # müziğe tepki açıkken dalga, ses yükseldikçe biraz daha hızlı akar
+            # with react-to-music on, the wave flows a bit faster as the volume rises
             self.phase += dt * LAM / 1.4 * ((0.7 + 0.8 * self.level) if react else 1.0)
             animating = True
 
         self._render_all()
-        if isinstance(self._morph, dict):  # mini ↔ normal geçişi
+        if isinstance(self._morph, dict):  # mini ↔ normal transition
             self._morph_step()
             animating = True
         if self.marq is not None:
             animating = True
-        # animasyon varken ~60 fps: bu karenin süresini düşerek sabit aralık tut
+        # ~60 fps while animating: keep a steady interval by subtracting this frame's time
         frame_ms = FRAME_MS if self.cfg["fps"] >= 60 else 33
         if animating or self.drag_seek is not None:
             interval = frame_ms
         elif playing or self.inside or self._alarm_fade or self._duck or self._duck_fade \
                 or self.sleep_end is not None:
-            interval = 200   # süre / ilerleme güncel kalsın
+            interval = 200   # keep time / progress current
         else:
-            interval = 450   # duraklatılmış ve boşta: daha seyrek kontrol yeter
+            interval = 450   # paused and idle: checking less often is enough
         return interval
 
     def _start_palette(self, target):
@@ -2924,7 +2924,7 @@ class App:
         self._set_art(img)
 
     def _set_art(self, img):
-        """Kapağı (PIL görüntüsü ya da None) uygula: küçük kopyalar + renk paleti."""
+        """Apply the cover (PIL image or None): small copies + color palette."""
         self.art_version += 1
         if img is not None:
             self.art_src = img.convert("RGB")
@@ -2933,17 +2933,17 @@ class App:
             self.art_src = None
             self.seed = DEFAULT_SEED
         self._make_art()
-        # renkler hemen yeni değerine geçer; yumuşak geçişi _transition'ın çapraz geçişi yapar
-        # (eski yarım saniyelik renk animasyonu her karede baştan çizim gerektiriyordu)
+        # colors switch to the new value at once; _transition's cross-fade does the smooth change
+        # (the old half-second color animation needed a full redraw every frame)
         self.pal = self.pal_from = self.pal_to = self._scheme()
         self.pal_t = 1.0
         self.pal_version += 1
 
     def _scheme(self):
         if self.cfg.get("ui") == "shadcn":
-            # shadcn: 'kapaktan' seçiliyse nötr (siyah/beyaz), sabit renk seçiliyse o renk
+            # shadcn: neutral (black/white) if 'from cover' is selected, else the fixed color
             return build_shadcn(self.light, dict(ACCENTS).get(self.cfg.get("accent")))
-        if self.cfg.get("ui") == "neu":  # sabit gri-mavi palet: kapak / vurgu rengi kullanılmaz
+        if self.cfg.get("ui") == "neu":  # fixed slate palette: cover / accent color is not used
             return build_neu(self.light)
         seed = dict(ACCENTS).get(self.cfg.get("accent"), self.seed)
         return build_scheme(seed, self.light)
@@ -2957,10 +2957,10 @@ class App:
         self.base_key = None
         self._render_all()
 
-    # ---------------- arka plan: düz / cam / yarı şeffaf
+    # ---------------- background: solid / glass / translucent
     @staticmethod
     def _wallpaper_file():
-        """(yol, değişme zamanı) ya da None."""
+        """(path, modified time) or None."""
         buf = ctypes.create_unicode_buffer(520)
         user32.SystemParametersInfoW(0x73, 520, buf, 0)  # SPI_GETDESKWALLPAPER
         for p in (buf.value, os.path.join(os.environ.get("APPDATA", ""),
@@ -2973,7 +2973,7 @@ class App:
         return None
 
     def _glass_bg(self):
-        """Pencerenin arkasındaki duvar kağıdı parçası, bulanık (WMAX x HMAX, RGB)."""
+        """Blurred wallpaper piece behind the window (WMAX x HMAX, RGB)."""
         g = self._glass
         wx, wy = self._win_pos()
         mi = monitor_info(self.hwnd).rcMonitor
@@ -2995,9 +2995,9 @@ class App:
                             style = str(winreg.QueryValueEx(k, "WallpaperStyle")[0])
                     except OSError:
                         pass
-                    if style == "2":  # uzat
+                    if style == "2":  # stretch
                         full = src.resize((mw // 4, mh // 4), Image.Resampling.BILINEAR)
-                    else:  # doldur (varsayılan): kırparak kapla
+                    else:  # fill (default): crop to cover
                         sc = max(mw / src.width, mh / src.height) / 4
                         tmp = src.resize((max(1, round(src.width * sc)),
                                           max(1, round(src.height * sc))),
@@ -3006,7 +3006,7 @@ class App:
                         full = tmp.crop((ox, oy, ox + mw // 4, oy + mh // 4))
                     g["small"] = full.filter(ImageFilter.GaussianBlur(9))
                 except Exception as e:  # noqa: BLE001
-                    log("duvar kağıdı okunamadı:", repr(e))
+                    log("could not read wallpaper:", repr(e))
         small = g["small"]
         if small is None:
             return None
@@ -3021,7 +3021,7 @@ class App:
         return g["crop"]
 
     def _card(self, img, x0, y0, x1, y1, r):
-        """Kart zemini (fiziksel piksel), seçili arka plan stiline göre."""
+        """Card background (physical pixels) for the selected background style."""
         P, mode = self.pal, self.cfg["bg"]
         if STYLE["neu"]:
             self._neu_card(img, x0, y0, x1, y1, r, mode)
@@ -3045,7 +3045,7 @@ class App:
                 img.alpha_composite(layer, (ix0, iy0))
                 self._card_border(img, x0, y0, x1, y1, r)
                 return
-        if STYLE["shad"]:  # shadcn kartı: 1 px kenarlık + düz zemin
+        if STYLE["shad"]:  # shadcn card: 1 px border + flat fill
             rr(img, x0, y0, x1, y1, r, P["border"])
             b = max(1.0, round(self.S))
             rr(img, x0 + b, y0 + b, x1 - b, y1 - b, r - b, P["surface"])
@@ -3053,8 +3053,8 @@ class App:
         rr(img, x0, y0, x1, y1, r, P["surface"])
 
     def _neu_card(self, img, x0, y0, x1, y1, r, mode):
-        """Neumorphic kart: pastel / kömür çapraz geçiş + ince açık kenar. Cam modda duvar
-        kağıdıyla, yarı şeffaf modda saydamlıkla birleşir (geçiş her modda kalır)."""
+        """Neumorphic card: pastel / charcoal diagonal gradient + thin light edge. Blends with the
+        wallpaper in glass mode and with transparency in translucent mode (the gradient stays)."""
         from PIL import ImageChops
         ix0, iy0 = int(math.floor(x0)), int(math.floor(y0))
         w, h = int(math.ceil(x1)) - ix0, int(math.ceil(y1)) - iy0
@@ -3082,7 +3082,7 @@ class App:
         img.alpha_composite(edge, (ix0, iy0))
 
     def _card_border(self, img, x0, y0, x1, y1, r):
-        """shadcn'de cam / yarı şeffaf kartlara da ince kenarlık (sadece çerçeve)."""
+        """In shadcn, glass / translucent cards get a thin border too (outline only)."""
         if not STYLE["shad"]:
             return
         b = max(1.0, round(self.S))
@@ -3097,7 +3097,7 @@ class App:
         layer.putalpha(ImageChops.subtract(outer, inner))
         img.alpha_composite(layer, (ix0, iy0))
 
-    # ---------------- dinleme istatistikleri
+    # ---------------- listening stats
     def _load_stats(self):
         try:
             with open(STATS_PATH, "r", encoding="utf-8") as f:
@@ -3116,7 +3116,7 @@ class App:
         try:
             save_json(STATS_PATH, self.stats, ensure_ascii=False)
         except Exception as e:  # noqa: BLE001
-            log("istatistik kaydedilemedi:", repr(e))
+            log("could not save stats:", repr(e))
         self._stat_saved = time.monotonic()
 
     def _stat_day(self):
@@ -3128,7 +3128,7 @@ class App:
         if prev is None or not (playing and st.get("ok")):
             return
         delta = now - prev
-        if not 0 < delta < 5:  # uyku / donma sonrası büyük boşlukları sayma
+        if not 0 < delta < 5:  # skip big gaps after sleep / freeze
             return
         d = self._stat_day()
         d["sec"] += delta
@@ -3145,7 +3145,7 @@ class App:
             self._save_stats()
 
     def _index_imported(self):
-        """İçe aktarılan geçmişten bir kerelik çıkarımlar: sanatçıyı ilk dinleme günü."""
+        """One-off facts from the imported history: first listen day per artist."""
         first = {}
         for k in sorted(self.imported):
             for a in self.imported[k].get("artists", {}):
@@ -3166,7 +3166,7 @@ class App:
         return T("since", d=f"{T('months').split()[int(k[5:7]) - 1]} {k[:4]}")
 
     def _streaks(self):
-        """(şu anki seri, en uzun seri): en az 1 dakika müzik dinlenen ardışık günler."""
+        """(current streak, longest streak): consecutive days with at least 1 minute of music."""
         today = date.today()
         ck = (today, self.import_ver, len(self.stats["days"]),
               (self._stat_get(today.isoformat()) or {}).get("sec", 0) >= 60)
@@ -3182,18 +3182,18 @@ class App:
             best = max(best, run)
             prev = d
         cur = 0
-        if prev is not None and (today - prev).days <= 1:  # bugün ya da dün dinlendiyse sürüyor
+        if prev is not None and (today - prev).days <= 1:  # continues if listened today or yesterday
             cur = run
         res = (cur, best)
         self._streak_cache = (ck, res)
         return res
 
     def _last_year_today(self):
-        """Geçen yıl bugün en çok dinlenen şarkı: (şarkı, sanatçı, saniye) ya da None."""
+        """Most played track on this day last year: (track, artist, seconds) or None."""
         t = date.today()
         try:
             ly = t.replace(year=t.year - 1)
-        except ValueError:  # 29 Şubat
+        except ValueError:  # 29 February
             ly = t.replace(year=t.year - 1, day=28)
         d = self._stat_get(ly.isoformat())
         if not d or not d.get("tracks"):
@@ -3202,16 +3202,16 @@ class App:
         title, _s, artist = name.partition("\t")
         return title, artist, sec
 
-    # ---------------- dinleme geçmişinde arama
+    # ---------------- search in listening history
     @staticmethod
     def _norm(text):
-        """Aramada büyük/küçük harf ve aksan farkını yok say (İ/ı/ş/é…)."""
+        """Ignore case and accent differences in search (İ/ı/ş/é…)."""
         t = (text or "").replace("İ", "i").replace("I", "ı").lower().replace("ı", "i")
         return "".join(c for c in unicodedata.normalize("NFKD", t)
                        if not unicodedata.combining(c))
 
     def _history_index(self):
-        """Şarkı ve sanatçı başına toplamlar (içe aktarılan + canlı). Birkaç dakikada bir yenilenir."""
+        """Totals per track and artist (imported + live). Refreshed every few minutes."""
         ck = (self.import_ver, len(self.stats["days"]), int(time.time() // 300))
         if getattr(self, "_hidx", (None,))[0] == ck:
             return self._hidx[1]
@@ -3251,7 +3251,7 @@ class App:
         return tracks, artists
 
     def history_search(self, query, limit=150):
-        """[(tür, anahtar, kayıt)] — önce eşleşen sanatçılar, sonra şarkılar (süreye göre)."""
+        """[(kind, key, record)] — matching artists first, then tracks (by time)."""
         tracks, artists = self._history_index()
         words = self._norm(query).split()
         if not words:
@@ -3298,7 +3298,7 @@ class App:
                 "tracks": sorted(tracks.items(), key=lambda kv: -kv[1])[:5]}
 
     def _render_recap(self, year):
-        """Wrapped tarzı yıllık özet görseli (paylaşılabilir, 2x çözünürlük)."""
+        """Wrapped-style yearly summary image (shareable, 2x resolution)."""
         yd = self._year_data(year)
         P = self.pal
         S = 2.0
@@ -3313,7 +3313,7 @@ class App:
              "num": font("seguisb.ttf", 15)}
         Wd, Hd = 420, 760
         img = Image.new("RGBA", (round(X(Wd)), round(X(Hd))), P["surface"] + (255,))
-        # üstte birincil renkten yüzeye geçen degrade
+        # gradient from the primary color to the surface at the top
         top = Image.new("RGBA", img.size, P["primary_container"] + (255,))
         mask = Image.linear_gradient("L").resize(img.size).point(lambda v: 255 - v)
         img.paste(top, (0, 0), mask.point(lambda v: int(v * 0.85)))
@@ -3387,10 +3387,10 @@ class App:
                 f'{st.get("title", "")} {st.get("artist", "")}'.strip())
         self.root.clipboard_clear()
         self.root.clipboard_append(url)
-        self.toast.show_message("", T("sh_link_ok"))  # bağlantı simgesi
+        self.toast.show_message("", T("sh_link_ok"))  # link icon
 
     def _share_card(self):
-        """Kapak + şarkı adı ile 1080x1350 paylaşım kartı: panoya kopyalar ve Resimler'e kaydeder."""
+        """1080x1350 share card with cover + title: copies to the clipboard and saves to Pictures."""
         from PIL import ImageFilter
         st = self._view()
         if not st.get("title"):
@@ -3399,7 +3399,7 @@ class App:
         X = lambda v: v * S  # noqa: E731
         Wd, Hd = 400, 500
         img = Image.new("RGB", (1080, 1350), P["surface"])
-        if self.art_src is not None:  # bulanık kapak arka planı
+        if self.art_src is not None:  # blurred cover background
             bgi = self.art_src.resize((1350, 1350), Image.Resampling.BILINEAR).crop(
                 (135, 0, 1215, 1350)).filter(ImageFilter.GaussianBlur(60))
             img = Image.blend(bgi, Image.new("RGB", img.size, P["surface"]), 0.45)
@@ -3437,11 +3437,11 @@ class App:
             safe = "".join(c for c in st["title"] if c not in '<>:"/\\|?*')[:60].strip() or "song"
             out.save(os.path.join(pics, f"{safe}.png"))
         except Exception as e:  # noqa: BLE001
-            log("kart kaydedilemedi:", repr(e))
-        self.toast.show_message("", T("sh_card_ok"))  # resim simgesi
+            log("could not save card:", repr(e))
+        self.toast.show_message("", T("sh_card_ok"))  # image icon
 
     def _fill_devices(self, menu):
-        """Cihaza aktar alt menüsü açılırken cihazları getir."""
+        """Fetch devices when the Transfer to device submenu opens."""
         menu.delete(0, "end")
         if not self.web.connected:
             menu.add_command(label=T("s_need"), command=lambda: ConnectDialog(self))
@@ -3449,7 +3449,7 @@ class App:
         try:
             devs = self.web.devices()
         except Exception as e:  # noqa: BLE001
-            log("cihazlar:", repr(e))
+            log("devices:", repr(e))
             menu.add_command(label=T("dev_err"), state="disabled")
             return
         if not devs:
@@ -3467,15 +3467,15 @@ class App:
             try:
                 self.web.transfer(device_id)
             except Exception as e:  # noqa: BLE001
-                log("cihaza aktarılamadı:", repr(e))
+                log("could not transfer to device:", repr(e))
 
         threading.Thread(target=go, daemon=True).start()
 
     STAT_PERIODS = ("7", "30", "365", "all")
 
     def _stat_get(self, key):
-        """Bir günün verisi: canlı takip ve içe aktarılan geçmiş çakışırsa büyüğü alınır
-        (aynı dinlemenin iki kez sayılmaması için)."""
+        """One day's data: if live tracking and imported history overlap the bigger one wins
+        (so the same listen isn't counted twice)."""
         a, b = self.stats["days"].get(key), self.imported.get(key)
         if a is None or (b is not None and b["sec"] > a.get("sec", 0)):
             return b
@@ -3495,10 +3495,10 @@ class App:
         elif period == "365":
             m = today.month - 11
             start = date(today.year + (m - 1) // 12, (m - 1) % 12 + 1, 1)
-        elif period.startswith("y"):  # tek bir yıl (aylar)
+        elif period.startswith("y"):  # a single year (months)
             yy = int(period[1:])
             start, end = date(yy, 1, 1), min(today, date(yy, 12, 31))
-        elif period.startswith("m"):  # tek bir ay (günler)
+        elif period.startswith("m"):  # a single month (days)
             yy, mo = int(period[1:5]), int(period[6:8])
             start = date(yy, mo, 1)
             nxt = date(yy + mo // 12, mo % 12 + 1, 1)
@@ -3508,7 +3508,7 @@ class App:
             start = date.fromisoformat(min(keys)) if keys else today
         s0, s1 = start.isoformat(), end.isoformat()
 
-        # grafik kovaları; targets: tıklanınca açılacak dönem (ay / yıl)
+        # chart buckets; targets: period opened on click (month / year)
         names = T("days").split()
         months = T("months").split()
         targets = None
@@ -3561,7 +3561,7 @@ class App:
                 for h, v in hours.items():
                     g[row + int(h)] += v
 
-        # içe aktarılan (değişmeyen) kısım önbellekte; canlı günler her seferinde eklenir
+        # imported (unchanging) part is cached; live days are added every time
         live = [k for k in self.stats["days"] if s0 <= k <= s1]
         bk = (period, today, self.import_ver, tuple(sorted(live)))
         if getattr(self, "_imp_cache", (None,))[0] != bk:
@@ -3585,13 +3585,13 @@ class App:
             tiles = [(fmt_dur(total), T("st_total")),
                      (f"{int(plays):,}".replace(",", "."), T("st_plays")),
                      (fmt_dur(total / ndays), T("st_avg"))]
-            if period == "all":  # tüm zamanlar: günlük ortalama yerine dinleme serisi
+            if period == "all":  # all time: listening streak instead of daily average
                 cur_s, best_s = self._streaks()
                 tiles[2] = (T("st_streak_v", n=cur_s), T("st_streak", n=best_s))
         top_a = sorted(artists.items(), key=lambda kv: -kv[1])[:3]
         top_t = [(t.split("\t")[0], t.split("\t")[1] if "\t" in t else "", v)
                  for t, v in sorted(tracks.items(), key=lambda kv: -kv[1])[:3]]
-        # açılan dönemin başlığı ve bir üst seviye
+        # title of the opened period and one level up
         title = up = None
         if period.startswith("y"):
             title, up = period[1:], "all"
@@ -3627,7 +3627,7 @@ class App:
                 self.root.after(200, wait)
                 return
             if "e" in result:
-                log("içe aktarma:", repr(result["e"]))
+                log("import:", repr(result["e"]))
                 messagebox.showerror(T("imp_title"), T("imp_fail", e=result["e"]),
                                      parent=self.root)
                 return
@@ -3649,7 +3649,7 @@ class App:
 
         wait()
 
-    # ---------------- çizim
+    # ---------------- drawing
     def _render_all(self):
         st = self._view()
         connected, queue, qerr, qver = self.web.snapshot()
@@ -3680,7 +3680,7 @@ class App:
             self._keep_on_screen()
             self.base_strip = self.base.crop((0, self.sy0, self.WP, self.sy0 + self.sh))
             full = True
-        if self._morph and not full:  # geçiş sürerken kareleri _morph_step basıyor
+        if self._morph and not full:  # while a transition runs _morph_step pushes the frames
             return
         pos, end = self._position()
         if self.drag_seek is not None:
@@ -3703,7 +3703,7 @@ class App:
                     self.marq_key = off
                     frame.paste(self._render_marquee(off), (self.marq["x"], self.marq["y0"]))
                 self._frame = frame
-                if not self._morph:  # geçiş animasyonu sürerken kareleri o basar
+                if not self._morph:  # while the transition animation runs it pushes the frames
                     self.surface.full(frame, round(self.content_h * self.S) + 4)
             elif not self._morph:
                 self.surface.region(strip, 0, self.sy0)
@@ -3714,28 +3714,28 @@ class App:
                 self.surface.region(self._render_marquee(off), self.marq["x"], self.marq["y0"])
 
     def _keep_on_screen(self):
-        """Yükseklik değişince (mini ↔ normal, sekme, satır sayısı): widget ekranın alt
-        yarısındaysa alt kenarını sabit tutup yukarı doğru büyür; her durumda görev
-        çubuğunun altına taşmaz."""
+        """When the height changes (mini ↔ normal, tab, row count): if the widget is in the bottom
+        half of the screen it keeps its bottom edge and grows upward; it never goes under the
+        taskbar."""
         new_h = round(self.content_h * self.S)
         old_h = getattr(self, "_shown_h", None)
         self._shown_h = new_h
         if old_h is None or old_h == new_h or self.win_drag:
             return
         x, y = self._win_pos()
-        if x <= -20000:  # henüz yerleştirilmedi
+        if x <= -20000:  # not placed yet
             return
         wa = monitor_info(self.hwnd).rcWork
         ny = y
-        bottom = y + old_h / 2 > (wa.top + wa.bottom) / 2  # alt yarıda: alttan sabitle
+        bottom = y + old_h / 2 > (wa.top + wa.bottom) / 2  # bottom half: anchor the bottom
         if bottom:
             ny = y + old_h - new_h
         ny = max(wa.top, min(ny, wa.bottom - new_h))
         self._anchor = {"bottom": bottom, "deferred": None}
         if ny != y:
             if self._morph == "pending":
-                # geçişte pencere ayrı taşınmasın: büyürken ilk karede, küçülürken son karede
-                # çizimle aynı anda taşınır (yoksa eski görüntü bir an yanlış yerde görünür)
+                # don't move the window separately during a transition: it moves with the drawing on the
+                # first frame when growing, the last when shrinking (else the old image flashes in the wrong place)
                 self._anchor["deferred"] = (x, ny)
                 return
             move_window(self.hwnd, x, ny)
@@ -3743,14 +3743,14 @@ class App:
             self.cfg.save()
 
     def _memory_tick(self, now, st, playing):
-        """Günde bir kez, o gün müzik ilk çalmaya başladığında 'geçen yıl bugün' anısı.
-        Oyundayken (tam ekran) gösterilmez; o zaman bir sonraki uygun ana kalır."""
+        """Once a day, the first time music starts that day: an 'on this day last year' memory.
+        Not shown while in a game (fullscreen); it waits for the next good moment."""
         if not (playing and self.cfg["memory"]) or self.pending:
             return
         today = date.today().isoformat()
         if self.cfg.get("memory_day") == today or now - self._start_t < 8:
             return
-        if now - getattr(self, "_mem_check", 0) < 30:  # tam ekran kontrolünü sık yapma
+        if now - getattr(self, "_mem_check", 0) < 30:  # don't check fullscreen too often
             return
         self._mem_check = now
         ly = self._last_year_today()
@@ -3767,7 +3767,7 @@ class App:
                                 on_click=lambda: self._spotify_search(f"{title} {artist}"))
 
     def _like_hotkey(self):
-        """Ctrl+Alt+L: çalan şarkıyı beğen / beğeniyi kaldır ve kısa bir kalp göstergesi göster
+        """Ctrl+Alt+L: like / unlike the current track and show a short heart indicator
         (oyundayken de)."""
         st, web = self.st, self.web
         if not st.get("ok"):
@@ -3777,7 +3777,7 @@ class App:
             return
         fs = fullscreen_app((self.hwnd, self.toast.hwnd))
         title = st.get("title") or ""
-        if not web.toggle_like(title):  # Spotify'dan şarkı kimliği henüz gelmedi
+        if not web.toggle_like(title):  # Spotify hasn't sent the track id yet
             web.refresh_now()
             self.toast.show_message(IC_HEART_O, T("like_wait"), fs, hold=1400)
             return
@@ -3789,8 +3789,8 @@ class App:
                                     + (f" · {title}" if title else ""), fs, hold=1300)
 
     def _hotkey_osd(self, act):
-        """Kısayolla yapılan işlemi ekranda kısaca göster (widget görünmüyorsa: tam ekran
-        uygulama ya da önde başka bir pencere varken)."""
+        """Briefly show the hotkey action on screen (if the widget isn't visible: fullscreen
+        app or another window in front)."""
         if not self.cfg["osd"] or self.inside:
             return
         fs = fullscreen_app((self.hwnd, self.toast.hwnd))
@@ -3798,60 +3798,60 @@ class App:
             fg = user32.GetForegroundWindow()
             cls = ctypes.create_unicode_buffer(64)
             user32.GetClassNameW(fg, cls, 64)
-            if not fg or cls.value in _SHELL_CLASSES:  # masaüstü önde: widget zaten görünüyor
+            if not fg or cls.value in _SHELL_CLASSES:  # desktop in front: widget is already visible
                 return
         elif fs is None:
-            return  # her zaman üstte: widget zaten görünüyor
+            return  # always on top: widget is already visible
         if act in ("vol+", "vol-"):
             v = self.vol_val if self.vol_val is not None else self.volume.get()
             if v is not None:
                 self.toast.show_message(IC_MUTE if v <= 0 else IC_VOL, T("osd_vol"), fs,
                                         value=v, hold=1000)
         elif act == "play":
-            playing = not self.st.get("playing")  # komut henüz işlenmedi: tersi olacak
+            playing = not self.st.get("playing")  # command not processed yet: it will be the opposite
             title = self.st.get("title") or ""
             self.toast.show_message(IC_PAUSE if playing else IC_PLAY,
                                     (T("osd_play") if playing else T("osd_pause"))
                                     + (f" · {title}" if title else ""), fs)
         elif act in ("next", "prev") and not self.cfg["notify"]:
-            # bildirim açıksa yeni şarkı zaten gösterilecek
+            # if toasts are on the new track is shown anyway
             self.toast.show_message(IC_NEXT if act == "next" else IC_PREV,
                                     T("hk_next" if act == "next" else "hk_prev"), fs, hold=900)
 
-    # ---------------- ses: müziğe tepki, Discord'da kısma
+    # ---------------- audio: react to music, duck for Discord
     def _audio_tick(self, now, st, playing):
-        # müziğe tepki veren dalga: Spotify'ın çıkış seviyesi (otomatik kazançla 0..1)
+        # wave reacting to music: Spotify's output level (0..1 with auto gain)
         if self.cfg["react"] and self.cfg["wave"] and playing and not self.mini:
             p = self.volume.peak(("spotify.exe",))
-            # Masterlanmış müzikte tepe değeri hep yüksek kalır; en yüksek değere göre
-            # ölçeklemek dalgayı sabit tutar. Bunun yerine son birkaç saniyenin
-            # en düşük–en yüksek aralığına göre ölçekle: vuruşlar 0↔1 arasında gidip gelir.
+            # Mastered music keeps peaks high all the time; scaling by the max keeps the wave
+            # flat. Instead scale by the min–max range of the last few seconds:
+            # beats swing between 0↔1.
             if self._lvl_lo is None:
                 self._lvl_lo, self._lvl_hi = p * 0.6, p
             lo, hi = self._lvl_lo, self._lvl_hi
-            # kare hızından bağımsız olsun: 60 fps'teki bir kareye göre oran
+            # frame-rate independent: ratio relative to one frame at 60 fps
             last_t = getattr(self, "_lvl_t", None)
             k = max(0.2, min(3.0, (now - last_t) * 60)) if last_t else 1.0
             self._lvl_t = now
-            hi = max(p, hi + (lo - hi) * 0.015 * k)   # tavan yavaşça aşağı iner
-            lo = min(p, lo + (hi - lo) * 0.015 * k)   # taban yavaşça yukarı çıkar
+            hi = max(p, hi + (lo - hi) * 0.015 * k)   # ceiling slowly drops
+            lo = min(p, lo + (hi - lo) * 0.015 * k)   # floor slowly rises
             self._lvl_lo, self._lvl_hi = lo, hi
             target = 0.0 if p < 0.01 else min(1.0, max(0.0, (p - lo) / max(hi - lo, 0.04)))
-            f = (0.7 if target > self.level else 0.3) * k  # hızlı yüksel, yavaş düş
+            f = (0.7 if target > self.level else 0.3) * k  # rise fast, fall slowly
             self.level += (target - self.level) * min(1.0, f)
         else:
             self.level *= 0.8
             self._lvl_lo = None
 
-        # Discord'da biri konuşunca Spotify'ı kıs, susunca geri aç
-        # (Spotify çalmıyorsa kısacak bir şey yok: ses oturumlarını hiç tarama)
+        # duck Spotify when someone talks on Discord, restore when they stop
+        # (if Spotify isn't playing there's nothing to duck: don't scan audio sessions at all)
         if not playing and not self._duck and not self._duck_fade:
             return
         if not self.cfg["duck"] or self.sleep_fade is not None or self._alarm_fade:
             if self._duck:
                 self._duck_restore()
             return
-        if self._duck_fade:  # geri açılış (yumuşak)
+        if self._duck_fade:  # restore (smooth)
             f = self._duck_fade
             t = min(1.0, (now - f["t0"]) / 0.8)
             self.volume.set(f["from"] + (f["to"] - f["from"]) * t)
@@ -3873,7 +3873,7 @@ class App:
     def _duck_restore(self):
         d, self._duck = self._duck, None
         cur = self.volume.get()
-        # kullanıcı bu arada sesi değiştirdiyse ona dokunma
+        # if the user changed the volume meanwhile, leave it alone
         if cur is not None and abs(cur - d["low"]) < 0.03:
             self._duck_fade = {"from": cur, "to": d["orig"], "t0": time.monotonic()}
 
@@ -3894,7 +3894,7 @@ class App:
         if not f:
             return
         mono = time.monotonic()
-        if f["t0"] is None:  # Spotify'ın açılmasını bekle, sonra sesi kısıp çal
+        if f["t0"] is None:  # wait for Spotify to open, then lower the volume and play
             if mono > f["deadline"]:
                 self._alarm_fade = None
                 return
@@ -3908,7 +3908,7 @@ class App:
                     self.media.command("play")
                 f["t0"] = mono
             return
-        t = min(1.0, (mono - f["t0"]) / 60.0)  # 1 dakikada sesi aç
+        t = min(1.0, (mono - f["t0"]) / 60.0)  # raise the volume over 1 minute
         self.volume.set(0.02 + (f["target"] - 0.02) * t)
         if t >= 1.0:
             self._alarm_fade = None
@@ -3919,7 +3919,7 @@ class App:
         return None
 
     def _draw_volume(self, img, d, x0, y0, size, radius):
-        """Kapağın üstüne ses göstergesi."""
+        """Volume indicator on top of the cover."""
         v = self._vol_shown()
         if v is None:
             return
@@ -3929,7 +3929,7 @@ class App:
         white = (255, 255, 255, 255)
         cx = x0 + size / 2
         big = size >= 90
-        glyph = "" if v == 0 else ""  # sessiz / hoparlör
+        glyph = "" if v == 0 else ""  # muted / speaker
         if big:
             d.text((X(cx), X(y0 + size / 2 - 16)), glyph, font=self.icon_font(24), fill=white,
                    anchor="mm")
@@ -3938,7 +3938,7 @@ class App:
         else:
             d.text((X(cx), X(y0 + size / 2 - 3)), f"%{v}", font=self.F["btn"], fill=white,
                    anchor="mm")
-        # alttaki çubuk
+        # bar at the bottom
         m = 12 if big else 8
         by = y0 + size - (14 if big else 9)
         rr(img, X(x0 + m), X(by), X(x0 + size - m), X(by + 4), X(2), (255, 255, 255), alpha=70)
@@ -3946,9 +3946,9 @@ class App:
             rr(img, X(x0 + m), X(by), X(x0 + m + (size - 2 * m) * v / 100), X(by + 4), X(2),
                (255, 255, 255))
 
-    MARQ_PAUSE = 2.0   # başta bekleme (sn)
-    MARQ_SPEED = 32    # px/sn (ölçeksiz)
-    MARQ_GAP = 48      # tekrar arası boşluk
+    MARQ_PAUSE = 2.0   # pause at the start (s)
+    MARQ_SPEED = 32    # px/s (unscaled)
+    MARQ_GAP = 48      # gap between repeats
 
     def _make_marquee(self, title, x, cy, w, tlen, color):
         S, F = self.S, self.F
@@ -3957,7 +3957,7 @@ class App:
         span = round(tlen) + gap
         layer = Image.new("RGBA", (span * 2 + 2, h), (0, 0, 0, 0))
         d = Drawer(layer)
-        for k in (0, 1):  # kesintisiz döngü için iki kopya
+        for k in (0, 1):  # two copies for a seamless loop
             d.text((k * span, h / 2), title, font=F["mtitle"], fill=color + (255,), anchor="lm")
         w = round(w)
         fade = max(1, round(12 * S))
@@ -3991,7 +3991,7 @@ class App:
         return region
 
     def _render_mini(self):
-        """Mini mod: kapak, şarkı adı ve kontrollerden oluşan hap görünüm."""
+        """Mini mode: pill view with cover, title and controls."""
         S, P, F = self.S, self.pal, self.F
         X = lambda v: v * S  # noqa: E731
         img = Image.new("RGBA", (self.WMAX, self.HMAX), (0, 0, 0, 0))
@@ -4004,7 +4004,7 @@ class App:
         hov = self.hover
 
         self._card(img, 0, 0, X(W), X(MINI_H), X(MINI_H / 2))
-        # kapak
+        # cover
         ax = ay = 12
         if self.art_mini is not None:
             img.alpha_composite(self.art_mini, (round(X(ax)), round(X(ay))))
@@ -4022,7 +4022,7 @@ class App:
         self._draw_volume(img, d, ax, ay, MINI_ART, 16)
         hits.append(("art", ax, ay, ax + MINI_ART, ay + MINI_ART))
 
-        # kontroller (sağda)
+        # controls (right)
         cy = MINI_H / 2 - 2
         nx, px_, vx = W - 34, W - 84, W - 134
         for hid, bx, glyph in (("prev", vx, IC_PREV), ("next", nx, IC_NEXT)):
@@ -4047,7 +4047,7 @@ class App:
                fill=(P["on_surface"] if STYLE["neu"] else P["on_primary"]) + (255,), anchor="mm")
         hits.append(("play", px_ - pw / 2, cy - ph / 2, px_ + pw / 2, cy + ph / 2))
 
-        # metin
+        # text
         tx = ax + MINI_ART + 12
         tw = X(vx - 24 - tx)
         if ok or offline:
@@ -4055,7 +4055,7 @@ class App:
         else:
             title, sub = T("waiting_title"), T("mini_waiting_sub")
         tlen = F["mtitle"].getlength(title)
-        if tlen > tw:  # sığmıyor: ayrı katmanda yana kayarak çizilir
+        if tlen > tw:  # doesn't fit: drawn on a separate layer scrolling sideways
             self._make_marquee(title, X(tx), X(cy - 9), tw, tlen, P["on_surface"])
         else:
             self.marq = None
@@ -4082,7 +4082,7 @@ class App:
         X = lambda v: v * S  # noqa: E731
         st = self._view()
         ok = st.get("ok")
-        offline = bool(st.get("offline"))  # Spotify kapalı, son çalınan gösteriliyor
+        offline = bool(st.get("offline"))  # Spotify closed, showing the last played
         playing = self._playing()
         hov = self.hover
 
@@ -4094,10 +4094,10 @@ class App:
             d.text((X(cx), X(cy)), glyph, font=self.icon_font(px), fill=tuple(color) + (255,),
                    anchor="mm")
 
-        # ana kart
+        # main card
         self._card(img, 0, 0, X(W), X(MAIN_H), X(28))
 
-        # kapak
+        # cover
         ax, ay, asz = 16, 16, 120
         if STYLE["neu"]:
             neu_raise(img, X(ax), X(ay), X(ax + asz), X(ay + asz), X(20))
@@ -4112,7 +4112,7 @@ class App:
         self._draw_volume(img, d, ax, ay, asz, 20)
         hits.append(("art", ax, ay, ax + asz, ay + asz))
 
-        # beğen butonu (sağ üst)
+        # like button (top right)
         tx = 152
         tw = X(W - 18 - tx)
         if ok:
@@ -4127,7 +4127,7 @@ class App:
             hits.append(("like", hx - 18, hy - 18, hx + 18, hy + 18))
             tw = X(W - 18 - tx - 30)
 
-        # metinler
+        # texts
         if ok:
             status = T("playing") if playing else T("paused")
             mins = self._sleep_minutes()
@@ -4141,7 +4141,7 @@ class App:
             status, title = "SPOTIFY", T("waiting_title")
             artist, album = T("waiting_sub"), ""
         if offline:
-            # uyarı çipi: tıklayınca Spotify'ı açar
+            # warning chip: opens Spotify on click
             sw_ = F["status"].getlength(status) / S
             cx0, cx1 = tx - 2, tx + 14 + sw_ + 10
             chip = P["secondary_container"]
@@ -4160,7 +4160,7 @@ class App:
             d.text((X(tx), X(y)), line, font=F["title"], fill=P["on_surface"] + (255,))
             y += 25
         y += 2
-        # sanatçı ve albüm tıklanabilir: Spotify'da sayfasını açar
+        # artist and album are clickable: open their page in Spotify
         for hid, text, fkey, base_col, lh, show in (
                 ("artist", artist, "artist", P["on_surface_variant"], 20, True),
                 ("album", album, "album", P["outline"], 17, y < 122 - (21 if artist else 0))):
@@ -4171,18 +4171,18 @@ class App:
             d.text((X(tx), X(y)), txt, font=F[fkey], fill=col + (255,))
             wpx = F[fkey].getlength(txt)
             if ok or offline:
-                if hov == hid:  # alt çizgi
+                if hov == hid:  # underline
                     uy = X(y) + F[fkey].asc + max(1.0, 1.5 * S)
                     rr(img, X(tx), uy, X(tx) + wpx, uy + max(1.0, S), 0, col)
                 hits.append((hid, tx, y, tx + wpx / S, y + lh))
             y += lh + 1
 
-        # ilerleme çubuğu bölgesi (çizimi _render_strip yapar)
+        # progress bar area (_render_strip draws it)
         hits.append(("seek", BAR_X0 - 8, 146, BAR_X1 + 8, 174))
 
-        # kontroller
+        # controls
         cy = CTRL_CY
-        # karışık
+        # shuffle
         sx = CX - 148
         if st.get("shuffle"):
             rr(img, X(sx - 20), X(cy - 20), X(sx + 20), X(cy + 20), 0, P["primary_container"],
@@ -4194,7 +4194,7 @@ class App:
             state_layer(sx - 20, cy - 20, sx + 20, cy + 20, 0, P["on_surface"], ellipse=True)
         icon(sx, cy, IC_SHUFFLE, 18, c)
         hits.append(("shuffle", sx - 22, cy - 22, sx + 22, cy + 22))
-        # tekrar
+        # repeat
         rx = CX + 148
         rep = st.get("repeat") or 0
         if rep:
@@ -4207,7 +4207,7 @@ class App:
             state_layer(rx - 20, cy - 20, rx + 20, cy + 20, 0, P["on_surface"], ellipse=True)
         icon(rx, cy, IC_REPEAT_ONE if rep == 1 else IC_REPEAT, 18, c)
         hits.append(("repeat", rx - 22, cy - 22, rx + 22, cy + 22))
-        # önceki / sonraki (tonal)
+        # previous / next (tonal)
         for hid, bx, glyph in (("prev", CX - 84, IC_PREV), ("next", CX + 84, IC_NEXT)):
             col = P["secondary_container"]
             if hov == hid:
@@ -4217,7 +4217,7 @@ class App:
             rr(img, X(bx - 26), X(cy - 26), X(bx + 26), X(cy + 26), 0, col, ellipse=True)
             icon(bx, cy, glyph, 19, P["on_secondary_container"])
             hits.append((hid, bx - 26, cy - 26, bx + 26, cy + 26))
-        # oynat / duraklat (birincil, şekil değiştiren)
+        # play / pause (primary, shape-morphing)
         pw, ph = 80, 58
         col = P["primary"]
         if hov == "play":
@@ -4236,7 +4236,7 @@ class App:
              P["on_surface"] if STYLE["neu"] else P["on_primary"])
         hits.append(("play", CX - pw / 2, cy - ph / 2, CX + pw / 2, cy + ph / 2))
 
-        # sıradaki kartı
+        # up next card
         if self.cfg["show_queue"]:
             self._render_queue(img, d, hits, connected, queue, qerr)
         return img, hits
@@ -4250,7 +4250,7 @@ class App:
         rows = max(1, min(Q_ROWS, int(self.cfg["queue_rows"])))
         tab = self.cfg["list_tab"]
 
-        # gösterilecek satırlar: (ad, alt yazı, küçük kapak, sağdaki metin)
+        # rows to show: (name, subtitle, thumbnail, right text)
         items, message, need_connect = None, None, False
         if tab in ("stats", "lyrics"):
             pass
@@ -4282,7 +4282,7 @@ class App:
         self._card(img, 0, X(y0), X(W), X(y0 + Q_HEAD + body), X(28))
         self.content_h = y0 + Q_HEAD + body
 
-        # başlık: sekmeler + daralt
+        # header: tabs + collapse
         hy = y0 + Q_HEAD / 2
         x = 12
         for key, lbl in (("queue", T("tab_queue")), ("recent", T("tab_recent")),
@@ -4343,9 +4343,9 @@ class App:
             if hov == hid:
                 rr(img, X(8), X(ry + 2), X(W - 8), X(ry + Q_ROW - 2), X(16), P["on_surface"],
                    alpha=22)
-            # küçük kapak
+            # thumbnail
             tx0, ty0 = 20, ry + (Q_ROW - 40) / 2
-            if th == "cal":  # geçen yıl bugün
+            if th == "cal":  # on this day last year
                 rr(img, X(tx0), X(ty0), X(tx0 + 40), X(ty0 + 40), X(10), P["primary_container"])
                 d.text((X(tx0 + 20), X(ty0 + 20)), IC_CAL, font=self.icon_font(16),
                        fill=P["on_primary_container"] + (255,), anchor="mm")
@@ -4365,7 +4365,7 @@ class App:
                 d.text((X(W - 24), X(cy)), right, font=F["qsub"],
                        fill=P["on_surface_variant"] + (255,), anchor="rm")
             hits.append((hid, 8, ry, W - 8, ry + Q_ROW))
-        if tab == "recent":  # kaydırma göstergesi (daha fazla şarkı varsa)
+        if tab == "recent":  # scroll indicator (if there are more tracks)
             total = len(self._recent_all())
             if total > rows:
                 ty0, ty1 = top + 4, top + len(items) * Q_ROW - 4
@@ -4390,7 +4390,7 @@ class App:
         hov = self.hover
         period, lst = self.cfg["stats_period"], self.cfg["stats_list"]
 
-        # dönem seçici
+        # period picker
         x, cy = 16, top + 12
         for p in self.STAT_PERIODS:
             lbl = T("sp_" + p)
@@ -4407,7 +4407,7 @@ class App:
             d.text((X(x + w / 2), X(cy)), lbl, font=F["qsub"], fill=col + (255,), anchor="mm")
             hits.append((hid, x, cy - 14, x + w, cy + 14))
             x += w + 4
-        if sm["title"]:  # açılmış yıl / ay: tıklayınca bir üst seviyeye döner
+        if sm["title"]:  # opened year / month: click to go up one level
             lbl = "← " + sm["title"]
             w = F["qsub"].getlength(lbl) / S + 22
             x = max(x + 4, W - 16 - w)
@@ -4416,7 +4416,7 @@ class App:
             d.text((X(x + w / 2), X(cy)), lbl, font=F["qsub"], fill=P["on_primary"] + (255,),
                    anchor="mm")
             hits.append(("sup", x, cy - 14, x + w, cy + 14))
-        else:  # geçmişte arama düğmesi
+        else:  # else: search history button
             bx = W - 30
             if hov == "shist":
                 rr(img, X(bx - 14), X(cy - 14), X(bx + 14), X(cy + 14), 0, P["on_surface"],
@@ -4425,13 +4425,13 @@ class App:
                    fill=P["on_surface_variant"] + (255,), anchor="mm")
             hits.append(("shist", bx - 15, cy - 15, bx + 15, cy + 15))
 
-        # özet kutuları (bir yıl açıkken üçüncü kutu yıllık özet kartını açar)
+        # summary boxes (with a year open the third box opens the yearly summary card)
         gap, x0, ty = 8, 16, top + 34
         tw = (W - 32 - 2 * gap) / 3
         ly = self._last_year_today() if period == "7" else None
         for i, (val, lbl) in enumerate(sm["tiles"]):
             tx = x0 + i * (tw + gap)
-            if i == 2 and ly:  # 7 gün: geçen yıl bugün en çok dinlenen şarkı (tıklanabilir)
+            if i == 2 and ly:  # 7 days: most played on this day last year (clickable)
                 col = P["primary_container"]
                 if hov == "sly":
                     col = mix(col, P["on_primary_container"], 0.12)
@@ -4461,7 +4461,7 @@ class App:
             d.text((X(tx + 12), X(ty + 37)), fit_text(lbl, F["qsub"], X(tw - 20)),
                    font=F["qsub"], fill=P["on_surface_variant"] + (255,), anchor="lm")
 
-        # grafik (gün / ay / yıl)
+        # chart (day / month / year)
         bars = sm["bars"]
         n = max(1, len(bars))
         by0, by1 = top + 100, top + 146
@@ -4489,7 +4489,7 @@ class App:
             if target is not None:
                 hits.append((hid, cx - cw / 2, by0 - 6, cx + cw / 2, by1 + 22))
 
-        # en çok dinlenenler: sanatçı / şarkı / saatler
+        # top lists: artists / tracks / hours
         hy = top + 182
         d.text((X(20), X(hy)), T({"artists": "st_top_a", "tracks": "st_top_t"}.get(
             lst, "st_hours")), font=F["status"], fill=P["primary"] + (255,), anchor="lm")
@@ -4530,7 +4530,7 @@ class App:
             t1 = fit_text(name, F["qtitle"], avail)
             d.text((X(20), X(ry)), t1, font=F["qtitle"], fill=P["on_surface"] + (255,),
                    anchor="lm")
-            # şarkılarda sanatçı, sanatçılarda ilk dinleme tarihi
+            # artist for tracks, first listen date for artists
             extra = sm["top_t"][i][1] if lst == "tracks" else self._since(name)
             rest = avail - F["qtitle"].getlength(t1)
             if extra and rest > X(40):
@@ -4546,7 +4546,7 @@ class App:
             hits.append((hid, 10, ry - 11, W - 10, ry + 19))
 
     def _lyric_index(self):
-        """Şu an söylenen satırın indeksi (senkronize değilse -1)."""
+        """Index of the line being sung (-1 if not synced)."""
         if not self.lyrics.synced:
             return -1
         pos = self._position()[0] + 0.25
@@ -4606,7 +4606,7 @@ class App:
                    fill=P["outline"] + (255,), anchor="rm")
 
     def _render_heatmap(self, img, d, y0, grid):
-        """Haftanın günü × saat ısı haritası (7 satır, 24 sütun)."""
+        """Weekday × hour heat map (7 rows, 24 columns)."""
         S, P, F = self.S, self.pal, self.F
         X = lambda v: v * S  # noqa: E731
         names = T("days").split()
@@ -4674,7 +4674,7 @@ class App:
         S, P = self.S, self.pal
         X = lambda v: v * S  # noqa: E731
         strip = self.base_strip.copy()
-        if self.mini:  # mini mod: kartın altında ince düz çizgi
+        if self.mini:  # mini mode: thin flat line under the card
             cy = X(MINI_BAR_Y) - self.sy0
             x0, x1 = X(44), X(W - 44)
             rr(strip, x0, cy - X(1.5), x1, cy + X(1.5), X(1.5), P["surface_highest"])
@@ -4691,7 +4691,7 @@ class App:
         gap = X(5 + tw / 2)
         primary = P["primary"]
 
-        # çalınan kısım: dalga
+        # played part: wave
         played_end = px - gap
         if played_end > bx0 + 1:
             amp_q = round(self.amp * 4) / 4
@@ -4702,17 +4702,17 @@ class App:
             crop = tile.crop((off, 0, off + length, tile.height))
             top = int(round(cy - tile.height / 2))
             strip.alpha_composite(crop, (int(bx0), top))
-            # yuvarlak uçlar
+            # round caps
             for xl, xp in ((off / S, bx0), ((off + length) / S, bx0 + length)):
                 yy = top + tile.height / 2 + amp_q * S * math.sin(2 * math.pi * xl / LAM)
                 rr(strip, xp - X(2), yy - X(2), xp + X(2), yy + X(2), 0, primary, ellipse=True)
-        # kalan kısım
+        # remaining part
         rem = px + gap
         if rem < bx1 - 1:
             rr(strip, rem, cy - X(2), bx1, cy + X(2), X(2), P["surface_highest"])
             if rem < bx1 - X(10) and not STYLE["shad"]:
                 rr(strip, bx1 - X(4), cy - X(2), bx1, cy + X(2), 0, primary, ellipse=True)
-        # tutamaç (Material: dikey hap; shadcn: kenarlıklı yuvarlak)
+        # thumb (Material: vertical pill; shadcn: bordered circle)
         if STYLE["shad"]:
             rt = 9 if active else 7.5
             rr(strip, px - X(rt), cy - X(rt), px + X(rt), cy + X(rt), 0, primary, ellipse=True)
@@ -4722,7 +4722,7 @@ class App:
         else:
             rr(strip, px - X(tw / 2), cy - X(th / 2), px + X(tw / 2), cy + X(th / 2),
                X(tw / 2), primary)
-        # süreler
+        # times
         ty = X(180) - self.sy0
         d.text((bx0, ty), fmt_time(shown), font=self.F["time"],
                fill=P["on_surface_variant"] + (255,), anchor="lm")
@@ -4730,7 +4730,7 @@ class App:
                fill=P["on_surface_variant"] + (255,), anchor="rm")
         return strip
 
-    # ---------------- olaylar
+    # ---------------- events
     def _xy(self, e):
         return e.x / self.S, e.y / self.S
 
@@ -4794,7 +4794,7 @@ class App:
         self._render_all()
 
     def _on_wheel(self, e):
-        if e.state & 0x4:  # Ctrl + tekerlek: boyutu değiştir
+        if e.state & 0x4:  # Ctrl + wheel: resize
             self._set_scale(float(self.cfg["scale"]) + (SCALE_STEP if e.delta > 0
                                                          else -SCALE_STEP))
             return
@@ -4802,7 +4802,7 @@ class App:
         h = self._hit(x, y) or ""
         if self.cfg["list_tab"] == "recent" and not self.mini and (
                 (h[:1] == "h" and h[1:].isdigit()) or y > MAIN_H + GAP + Q_HEAD):
-            # Geçmiş listesini kaydır
+            # scroll the History list
             total = len(self._recent_all())
             rows = max(1, min(Q_ROWS, int(self.cfg["queue_rows"])))
             off = max(0, min(total - rows, self.hist_off + (-1 if e.delta > 0 else 1)))
@@ -4812,7 +4812,7 @@ class App:
                 self.hover = None
                 self._render_all()
             return
-        if h == "art":  # kapak üstünde tekerlek: Spotify'ın sesi
+        if h == "art":  # wheel over the cover: Spotify volume
             self._change_volume(0.05 if e.delta > 0 else -0.05)
             self._render_all()
             return
@@ -4825,7 +4825,7 @@ class App:
     def _action(self, a):
         st = self.st
         if a == "open" or (a == "play" and not st.get("ok")):
-            a = "art"  # Spotify kapalıyken: Spotify'ı aç
+            a = "art"  # Spotify closed: open Spotify
         if a == "play":
             self.play_hold = (not self._playing(), time.monotonic())
             self.media.command("toggle")
@@ -4834,13 +4834,13 @@ class App:
         elif a == "shuffle":
             self.media.command("shuffle", not st.get("shuffle"))
         elif a == "repeat":
-            nxt = {0: 2, 2: 1, 1: 0}.get(st.get("repeat") or 0, 0)  # kapalı → liste → şarkı
+            nxt = {0: 2, 2: 1, 1: 0}.get(st.get("repeat") or 0, 0)  # off → context → track
             self.media.command("repeat", nxt)
         elif a == "art":
             if st.get("ok") and st.get("title"):
-                SongDialog(self)   # çalan şarkının özellikleri
+                SongDialog(self)   # current track details
             else:
-                open_spotify()     # Spotify kapalı: aç
+                open_spotify()     # Spotify closed: open it
         elif a in ("artist", "album"):
             self._open_entity(a)
         elif a == "like":
@@ -4861,24 +4861,24 @@ class App:
             self._set("stats_period", a[3:])
         elif a == "shist":
             HistoryDialog(self)
-        elif a == "sly":  # geçen yıl bugün: o şarkıyı Spotify'da aç
+        elif a == "sly":  # on this day last year: open that track in Spotify
             ly = self._last_year_today()
             if ly:
                 self._spotify_search(f"{ly[0]} {ly[1]}")
         elif a == "swrap":
             RecapWindow(self, int(self.cfg["stats_period"][1:]))
-        elif a == "sup":  # açılmış aydan yıla, yıldan tümüne
+        elif a == "sup":  # from an opened month to the year, from the year to all time
             up = self._stats_summary()["up"]
             if up:
                 self._set("stats_period", up)
-        elif a.startswith("sb"):  # grafikte yıl / ay çubuğu: o dönemi aç
+        elif a.startswith("sb"):  # year / month bar in the chart: open that period
             bars = self._stats_summary()["bars"]
             i = int(a[2:])
             if i < len(bars) and bars[i][2]:
                 self._set("stats_period", bars[i][2])
         elif a.startswith("sl_"):
             self._set("stats_list", a[3:])
-        elif a.startswith("sr"):  # en çok dinlenen: Spotify'da ara
+        elif a.startswith("sr"):  # top list: search in Spotify
             sm, i = self._stats_summary(), int(a[2:])
             if self.cfg["stats_list"] == "artists":
                 q = sm["top_a"][i][0] if i < len(sm["top_a"]) else ""
@@ -4886,12 +4886,12 @@ class App:
                 q = " ".join(sm["top_t"][i][:2]) if i < len(sm["top_t"]) else ""
             if q:
                 self._spotify_search(q)
-        elif a.startswith("h"):  # son çalınan: Spotify'da ara
+        elif a.startswith("h"):  # recently played: search in Spotify
             items = self._recent_rows(int(self.cfg["queue_rows"]))
             i = int(a[1:])
             if i < len(items):
                 self._spotify_search(items[i]["q"].strip())
-        elif a.startswith("ly"):  # söz satırı: o ana atla
+        elif a.startswith("ly"):  # lyrics line: seek there
             i = int(a[2:])
             lines = self.lyrics.lines()
             if lines and i < len(lines) and lines[i][0] is not None:
@@ -4900,7 +4900,7 @@ class App:
         elif a.startswith("q"):
             n = int(a[1:]) + 1
             _c, queue, _e, _v = self.web.snapshot()
-            if queue and n <= len(queue):  # seçilen şarkıyı Spotify onaylamadan hemen göster
+            if queue and n <= len(queue):  # show the picked track at once, before Spotify confirms
                 it = queue[n - 1]
                 self.pending = {"title": it["name"], "artist": it["sub"], "dur": it.get("dur") or 0,
                                 "until": time.monotonic() + 3.0 + 0.4 * n}
@@ -4908,13 +4908,13 @@ class App:
                 if th is not None:
                     self._set_art(th)
                 self.seek_hold = (0.0, time.monotonic())
-                self.web.pop_queue(n)  # listeden atlanan şarkıları hemen çıkar
+                self.web.pop_queue(n)  # drop the skipped tracks from the list right away
                 self.base_key = None
             self.media.command("skip_n", n)
-            # atlamalar bitince sırayı yenile (arada eski listeyi gösterip titremesin)
+            # refresh the queue after the skips (don't flicker by showing the old list in between)
             self.root.after(int(300 * n), self.web.refresh_now)
 
-    # ---------------- menü (kendi çizdiğimiz Material menü: MenuPanel)
+    # ---------------- menu (our own drawn Material menu: MenuPanel)
     def _on_menu(self, e):
         MenuPanel.toggle(self, e.x_root, e.y_root)
 
@@ -4969,7 +4969,7 @@ class App:
             return False
 
     def _set_startup(self, on):
-        """Windows açılışında başlat: HKCU\\...\\Run kaydı (Görev Yöneticisi > Başlangıç'ta görünür)."""
+        """Launch at Windows startup: HKCU\\...\\Run entry (shown in Task Manager > Startup)."""
         self.cfg["startup"] = bool(on)
         self.cfg.save()
         try:
@@ -4989,18 +4989,18 @@ class App:
                     except FileNotFoundError:
                         pass
         except OSError as e:
-            log("başlangıç ayarı:", repr(e))
+            log("startup setting:", repr(e))
 
     def run(self):
         self.root.mainloop()
         self._save_stats()
-        if self._duck:  # kapanırken kısılmış sesi geri getir
+        if self._duck:  # restore ducked volume when closing
             self.volume.set(self._duck["orig"])
 
 
-# ------------------------------------------------------------------ bildirim baloncuğu
+# ------------------------------------------------------------------ toast
 class Toast:
-    """Şarkı değişince sağ altta beliren kısa 'şimdi çalıyor' baloncuğu."""
+    """Short 'now playing' bubble that appears bottom right when the track changes."""
     TW, TH = 340, 88
     HOLD_MS = 3500
 
@@ -5015,7 +5015,7 @@ class Toast:
         t.update()
         self.hwnd = user32.GetAncestor(t.winfo_id(), 2)
         set_window_styles(self.hwnd)
-        # sahipsiz pencere: masaüstüne iliştirilmiş ana pencereye bağlı kalmasın
+        # ownerless window: don't stay tied to the main window pinned to the desktop
         user32.SetWindowLongPtrW(self.hwnd, GWLP_HWNDPARENT, 0)
         self.surface = LayeredSurface(self.hwnd, self.WM, self.HM)
         self.surface.alpha = 0
@@ -5055,8 +5055,8 @@ class Toast:
         return img
 
     def show(self, st, fs=None):
-        """fs: tam ekran uygulamanın monitörü (varsa bildirim onun üstünde, sağ üstte çıkar
-        ve tıklamaları oyuna geçirir)."""
+        """fs: monitor of the fullscreen app (if any the toast appears on it, top right,
+        and passes clicks through to the game)."""
         self._present(self._render(st), self.TW, self.TH, fs, self.HOLD_MS)
 
     def _clicked(self):
@@ -5066,8 +5066,8 @@ class Toast:
             fn()
 
     def show_message(self, icon, text, fs=None, value=None, hold=1400, on_click=None, sub=None):
-        """Kısa ekran göstergesi (kısayollar, alarm, kopyalandı): simge + metin
-        (+ value verilirse ses çubuğu)."""
+        """Short on-screen indicator (hotkeys, alarm, copied): icon + text
+        (+ a volume bar if value is given)."""
         app = self.app
         S, P, F = app.S, app.pal_to, app.F
         X = lambda v: v * S  # noqa: E731
@@ -5079,7 +5079,7 @@ class Toast:
         rr(img, X(10), X(10), X(50), X(50), 0, P["primary"], ellipse=True)
         d.text((X(30), X(30)), icon, font=app.icon_font(17), fill=P["on_primary"] + (255,),
                anchor="mm")
-        if sub is not None:  # iki satır: küçük başlık + asıl metin
+        if sub is not None:  # two lines: small heading + main text
             d.text((X(64), X(21)), fit_text(text, F["status"], X(w - 80)), font=F["status"],
                    fill=P["primary"] + (255,), anchor="lm")
             d.text((X(64), X(40)), fit_text(sub, F["mtitle"], X(w - 80)), font=F["mtitle"],
@@ -5115,7 +5115,7 @@ class Toast:
             rc = wintypes.RECT()
             user32.SystemParametersInfoW(0x30, 0, ctypes.byref(rc), 0)  # SPI_GETWORKAREA
             self._pos = (rc.right - round(w * S) - m, rc.bottom - round(h * S) - m)
-        self._offset = 14 * S  # aşağıdan yukarı kayarak gelir
+        self._offset = 14 * S  # slides up from below
         user32.SetWindowPos(self.hwnd, HWND_TOPMOST, self._pos[0],
                             self._pos[1] + int(self._offset), 0, 0,
                             SWP_NOSIZE | SWP_NOACTIVATE)
@@ -5140,17 +5140,17 @@ class Toast:
         self.surface.alpha = nxt
         if target > 0:
             self._offset *= 0.7
-            # her adımda en üste yeniden yerleş (oyunlar kendini öne alabiliyor)
+            # re-raise to the top every step (games can bring themselves to front)
             user32.SetWindowPos(self.hwnd, HWND_TOPMOST, self._pos[0],
                                 self._pos[1] + int(self._offset), 0, 0,
                                 SWP_NOSIZE | SWP_NOACTIVATE)
         self.surface._commit(None)
         if nxt != target:
             self._job = self.top.after(16, self._step)
-        elif target > 0:  # bekle (en üstte kalarak), sonra kaybol
+        elif target > 0:  # wait (staying on top), then disappear
             self._hold_until = time.monotonic() + self.hold / 1000
             self._job = self.top.after(250, self._hold)
-        else:  # gizlendi: ekran dışına al
+        else:  # hidden: move off screen
             move_window(self.hwnd, -30000, -30000)
 
     def _hold(self):
@@ -5163,25 +5163,25 @@ class Toast:
         if self.fs and not getattr(self, "_z_logged", False):
             self._z_logged = True
             self._log_z()
-        # tam ekranda oyun kendini sık sık öne alabilir: daha sık yeniden üste çık
+        # in fullscreen a game may often bring itself to front: re-raise more often
         self._job = self.top.after(100 if self.fs else 250, self._hold)
 
     def _log_z(self):
-        """Tanı: bildirim, ön plandaki tam ekran pencerenin üstünde mi?"""
+        """Diagnostics: is the toast above the foreground fullscreen window?"""
         fg = user32.GetForegroundWindow()
         h, n = user32.GetTopWindow(None), 0
         while h and n < 3000:
             if h == self.hwnd:
-                log("bildirim z-sırası: oyunun üstünde")
+                log("toast z-order: above the game")
                 return
             if h == fg:
-                log("bildirim z-sırası: oyunun ALTINDA kaldı")
+                log("toast z-order: stayed BELOW the game")
                 return
             h, n = user32.GetWindow(h, 2), n + 1
 
 
-# ------------------------------------------------------------------ bağlantı penceresi
-# ------------------------------------------------------------------ sağ tık menüsü
+# ------------------------------------------------------------------ connect dialog
+# ------------------------------------------------------------------ right-click menu
 MI_BACK, MI_CHEV, MI_CHECK = "", "", ""
 MI = {"search": "", "mini": "", "lock": "", "share": "",
       "open": "", "look": "", "alpha": "", "widget": "",
@@ -5191,17 +5191,17 @@ MI = {"search": "", "mini": "", "lock": "", "share": "",
 
 
 class MenuPanel:
-    """Widget'la aynı Material You görünümlü, sayfalı sağ tık menüsü (katmanlı pencere).
-    Alt menüler açılır liste yerine aynı panelde sayfa olarak açılır."""
+    """Paged right-click menu with the same Material You look as the widget (layered window).
+    Submenus open as pages in the same panel instead of dropdowns."""
     _inst = None
-    PW = 300          # panel genişliği (mantıksal px)
-    M = 14            # gölge payı
+    PW = 300          # panel width (logical px)
+    M = 14            # shadow margin
     HEIGHTS = {"quick": 80, "sep": 9, "nav": 40, "toggle": 40, "action": 40, "radio": 38,
                "seg": 66, "swatch": 66, "info": 24, "header": 30, "title": 50}
 
     @classmethod
     def toggle(cls, app, x, y):
-        if cls._inst is not None:  # açıksa: yeni konumda yeniden aç
+        if cls._inst is not None:  # if open: reopen at the new position
             cls._inst.close()
         cls._inst = MenuPanel(app, x, y)
 
@@ -5224,7 +5224,7 @@ class MenuPanel:
         self.scroll = 0.0
         self.hover = None
         self.hits = []
-        self.devices = None      # None: yükleniyor, list, ya da "err"
+        self.devices = None      # None: loading, list, or "err"
         self.anchor = (x, y)
         wa = self._work_area(x, y)
         self.max_h = (wa.bottom - wa.top) / S - 2 * self.M - 8
@@ -5259,7 +5259,7 @@ class MenuPanel:
         self._watch()
 
     def _watch(self):
-        """Odak alınamazsa da çalışsın: panelin dışına tıklanınca kapan."""
+        """Work even without focus: close on a click outside the panel."""
         if self._closing:
             return
         down = bool(user32.GetAsyncKeyState(0x01) & 0x8000 or user32.GetAsyncKeyState(0x02) & 0x8000)
@@ -5274,7 +5274,7 @@ class MenuPanel:
         self._was_down = down
         self.top.after(40, self._watch)
 
-    # -- yardımcılar
+    # -- helpers
     @staticmethod
     def _work_area(x, y):
         pt = wintypes.POINT(x, y)
@@ -5310,7 +5310,7 @@ class MenuPanel:
             pass
 
     def _on_focus_out(self, _e):
-        # odak gerçekten başka bir pencereye geçtiyse kapan
+        # close if focus really moved to another window
         self.top.after(60, lambda: (None if self._closing or
                                     user32.GetForegroundWindow() == self.hwnd else self.close()))
 
@@ -5332,8 +5332,8 @@ class MenuPanel:
             self._page_fade(self.pages.pop)
 
     def _page_fade(self, change, down=(170, 95), up=(165, 220, 255)):
-        """Sayfa geçişi: kısa sol → yeni sayfayı (soluk hâlde, taşımayla birlikte) çiz → belir.
-        Sadece pencere saydamlığı değişir; kare başına yeniden çizim yok."""
+        """Page change: quick fade out → draw the new page (faded, together with the move) → fade in.
+        Only the window opacity changes; no redraw per frame."""
         def step(seq, i, then):
             if self._closing:
                 return
@@ -5354,14 +5354,14 @@ class MenuPanel:
         step(down, 0, swap)
 
     def _then_close(self, fn):
-        """İşlemi yap ve menüyü kapat (pencere açan / tek seferlik işlemler)."""
+        """Do the action and close the menu (actions that open a window / one-off actions)."""
         def go():
             self.close()
             fn()
         return go
 
     def _restyle(self):
-        """Tasarım dili değişince menü de yeni yazı tipi / köşelerle çizilsin."""
+        """Redraw the menu with the new font / corners when the design language changes."""
         S = self.S
         self.F = {k: TextFont(n, px, S, bold=b) for k, (n, px, b) in self._font_spec.items()}
         self._bg_key = None
@@ -5378,7 +5378,7 @@ class MenuPanel:
             try:
                 self.devices = web.devices()
             except Exception as e:  # noqa: BLE001
-                log("cihazlar:", repr(e))
+                log("devices:", repr(e))
                 self.devices = "err"
 
         th = threading.Thread(target=work, daemon=True)
@@ -5394,7 +5394,7 @@ class MenuPanel:
 
         wait()
 
-    # -- sayfalar (her çizimde güncel durumdan yeniden kurulur)
+    # -- pages (rebuilt from the current state on every draw)
     def items(self):
         app, c = self.app, self.app.cfg
         page = self.pages[-1]
@@ -5456,7 +5456,7 @@ class MenuPanel:
                              ("light", T("th_light"))], "set": app._set_theme},
                 {"t": "swatch", "id": "s_acc", "label": T("m_accent"), "value": c["accent"],
                  "options": [("auto", None)] + list(ACCENTS), "set": app._set_accent},
-            ][:-1 if c["ui"] == "neu" else None]   # neumorphic: sabit palet, renk seçimi yok
+            ][:-1 if c["ui"] == "neu" else None]   # neumorphic: fixed palette, no color choice
             out += [
                 {"t": "seg", "id": "s_bg", "label": T("m_bg"), "value": c["bg"],
                  "options": [("solid", T("bg_solid")), ("glass", T("bg_glass").split(" (")[0]),
@@ -5579,7 +5579,7 @@ class MenuPanel:
                      "do": self._then_close(app._share_card)}]
         return out
 
-    # -- çizim
+    # -- drawing
     def render(self, place=False):
         if self._closing:
             return
@@ -5692,7 +5692,7 @@ class MenuPanel:
                     sel = val == it["value"]
                     sid = f'{iid}:{i}'
                     if sel:
-                        # shadcn Tabs: seçili sekme zemin renginde + ince kenarlık
+                        # shadcn Tabs: selected tab in background color + thin border
                         if STYLE["shad"]:
                             rr(content, X(sx0 + 3), X(sy0 + 3), X(sx0 + sw - 3), X(sy1 - 3),
                                X(13), P["border"])
@@ -5726,7 +5726,7 @@ class MenuPanel:
                            P["primary"] if sel else P["outline"], ellipse=True)
                         rr(content, X(cx - 13), X(cy - 13), X(cx + 13), X(cy + 13), 0,
                            P["surface_high"], ellipse=True)
-                    if seed is None:  # albüm kapağından
+                    if seed is None:  # from the album cover
                         rr(content, X(cx - 11), X(cy - 11), X(cx + 11), X(cy + 11), 0,
                            P["surface_highest"], ellipse=True)
                         d.text((X(cx), X(cy)), MI["auto"], font=self.icon(12), fill=on,
@@ -5743,16 +5743,16 @@ class MenuPanel:
                                  (lambda s=it["set"], v=val: s(v))))
             y += h
 
-        # pencereye yerleştir: gölge + kart + içerik
+        # place in the window: shadow + card + content
         sk = (vh, P["surface_high"])
-        if getattr(self, "_bg_key", None) != sk:  # gölge + kart zemini (yükseklik değişince)
+        if getattr(self, "_bg_key", None) != sk:  # shadow + card background (when the height changes)
             from PIL import ImageFilter
             bg = Image.new("RGBA", (self.WM, self.HM), (0, 0, 0, 0))
             shadow = Image.new("RGBA", (round(X(PW + 2 * M)), round(X(vh + 2 * M))),
                                (0, 0, 0, 0))
             rr(shadow, X(M), X(M + 3), X(M + PW), X(M + vh + 3), X(18), (0, 0, 0), alpha=110)
             bg.alpha_composite(shadow.filter(ImageFilter.GaussianBlur(X(7))))
-            if STYLE["shad"]:  # shadcn popover: kenarlık + düz zemin
+            if STYLE["shad"]:  # shadcn popover: border + flat fill
                 rr(bg, X(M), X(M), X(M + PW), X(M + vh), X(18), P["border"])
                 rr(bg, X(M) + 1, X(M) + 1, X(M + PW) - 1, X(M + vh) - 1, X(18), P["surface"])
             else:
@@ -5765,7 +5765,7 @@ class MenuPanel:
         a = part.getchannel("A")
         part.putalpha(Image.composite(a, Image.new("L", a.size, 0), mask))
         canvas.alpha_composite(part, (round(X(M)), round(X(M))))
-        if total > vh:  # kaydırma çubuğu
+        if total > vh:  # scrollbar
             th_ = vh * vh / total
             ty = self.scroll / (total - vh) * (vh - th_)
             rr(canvas, X(M + PW - 6), X(M + ty + 4), X(M + PW - 3), X(M + ty + th_ - 4),
@@ -5794,7 +5794,7 @@ class MenuPanel:
             rr(img, X(cx - r), X(cy - r), X(cx + r), X(cy + r), 0, P["outline"], ellipse=True)
 
     def _place(self, vh, first):
-        """İlk açılışta imleç konumuna; sayfa değişince ekrandan taşmayacak şekilde."""
+        """At the cursor on first open; on page change, positioned so it doesn't leave the screen."""
         S, M = self.S, self.M
         ax, ay = self.anchor
         wa = self._work_area(ax, ay)
@@ -5804,20 +5804,20 @@ class MenuPanel:
             y = ay - round(M * S) + 2
             if x + w > wa.right:
                 x = ax - w + round(M * S) - 2
-            self.up = y + h > wa.bottom  # aşağı sığmıyorsa yukarı aç
+            self.up = y + h > wa.bottom  # open upward if it doesn't fit below
             if self.up:
                 y = ay - h + round(M * S) - 2
             self.pos = [x, y]
             self.bottom = y + h
         x, y = self.pos
-        if self.up:  # yukarı açıldıysa alt kenar sabit: kısa sayfalar imlecin yanında kalır
+        if self.up:  # opened upward: bottom edge fixed so short pages stay next to the cursor
             y = self.bottom - h
         x = max(wa.left - round(M * S), min(x, wa.right - w + round(M * S)))
         y = max(wa.top - round(M * S), min(y, wa.bottom - h + round(M * S)))
         self.pos = [x, y]
-        return x, y   # taşıma çizimle aynı çağrıda yapılır (surface.full pos=)
+        return x, y   # the move happens in the same call as the drawing (surface.full pos=)
 
-    # -- olaylar
+    # -- events
     def _hit(self, e):
         x = e.x / self.S - self.M
         y = e.y / self.S - self.M
@@ -5844,7 +5844,7 @@ class MenuPanel:
         x, y = e.x / self.S - self.M, e.y / self.S - self.M
         if h is None:
             if not (0 <= x <= self.PW and 0 <= y <= self.vh):
-                self.close()  # gölgeye / dışarıya tıklama
+                self.close()  # click on the shadow / outside
             return
         h[5]()
         if not self._closing:
@@ -5857,10 +5857,10 @@ class MenuPanel:
 
 
 def copy_image_to_clipboard(img):
-    """PIL görüntüsünü Windows panosuna (CF_DIB) koyar."""
+    """Put a PIL image on the Windows clipboard (CF_DIB)."""
     buf = io.BytesIO()
     img.convert("RGB").save(buf, "BMP")
-    data = buf.getvalue()[14:]  # BITMAPFILEHEADER'sız DIB
+    data = buf.getvalue()[14:]  # DIB without BITMAPFILEHEADER
     k32 = ctypes.windll.kernel32
     k32.GlobalAlloc.restype = ctypes.c_void_p
     k32.GlobalLock.restype = ctypes.c_void_p
@@ -5888,8 +5888,8 @@ _PRIVATE_FONTS = set()
 
 
 def load_private_fonts():
-    """Uygulamayla gelen yazı tiplerini (Geist) sadece bu süreç için Windows'a tanıt:
-    böylece tk pencereleri de kullanabilir."""
+    """Register the bundled fonts (Geist) with Windows for this process only,
+    so tk windows can use them too."""
     try:
         for f in os.listdir(BUNDLED_FONTS):
             if f.lower().endswith(".ttf") and f not in _PRIVATE_FONTS:
@@ -5901,7 +5901,7 @@ def load_private_fonts():
 
 
 def style_titlebar(win, bg, fg, dark):
-    """Windows 11: başlık çubuğunu ve kenarlığı pencere rengine boya, köşeleri yuvarla."""
+    """Windows 11: paint the title bar and border in the window color, round the corners."""
     try:
         win.update_idletasks()
         hwnd = user32.GetAncestor(win.winfo_id(), 2)
@@ -5915,17 +5915,17 @@ def style_titlebar(win, bg, fg, dark):
             return c[0] | (c[1] << 8) | (c[2] << 16)
 
         setv(20, 1 if dark else 0)      # DWMWA_USE_IMMERSIVE_DARK_MODE
-        setv(33, 2)                      # DWMWA_WINDOW_CORNER_PREFERENCE: yuvarlak
+        setv(33, 2)                      # DWMWA_WINDOW_CORNER_PREFERENCE: round
         setv(35, cref(bg))               # DWMWA_CAPTION_COLOR
         setv(36, cref(fg))               # DWMWA_TEXT_COLOR
         setv(34, cref(bg))               # DWMWA_BORDER_COLOR
-    except Exception:  # noqa: BLE001  (Windows 10'da bu ayarların bir kısmı yok)
+    except Exception:  # noqa: BLE001  (some of these attributes don't exist on Windows 10)
         pass
 
 
 class PillButton(tk.Label):
-    """Material You / shadcn düğmesi: PIL ile çizilmiş yuvarlak zemin + metin, hover / basılı
-    durumlarıyla. kind: filled (birincil), tonal, text, outline."""
+    """Material You / shadcn button: PIL-drawn rounded background + text, with hover / pressed
+    states. kind: filled (primary), tonal, text, outline."""
 
     def __init__(self, dlg, parent, text, cmd, kind="tonal", small=False):
         super().__init__(parent, bg=dlg.bg, bd=0, cursor="hand2", highlightthickness=0,
@@ -5934,7 +5934,7 @@ class PillButton(tk.Label):
         P, dpi = dlg.P, dlg.app.dpi
         shad = STYLE["shad"]
         if shad and kind == "tonal":
-            kind = "outline"   # shadcn 'outline' düğme
+            kind = "outline"   # shadcn 'outline' button
         fill, fg, border = {
             "filled": (P["primary"], P["on_primary"], None),
             "tonal": (P["secondary_container"], P["on_secondary_container"], None),
@@ -5942,7 +5942,7 @@ class PillButton(tk.Label):
             "text": (None, P["primary"], None),
         }[kind]
         neu = STYLE["neu"] and kind in ("filled", "tonal")
-        if neu:  # kabarık düğme; çevresinde iki gölge için boşluk
+        if neu:  # raised button; room around it for two shadows
             fill = P["primary_container"] if kind == "filled" else P["secondary_container"]
             fg = P["on_primary_container"] if kind == "filled" else P["on_secondary_container"]
         f = TextFont("seguisb.ttf", 12 if small else 13, dpi, bold=True)
@@ -5953,7 +5953,7 @@ class PillButton(tk.Label):
         r = h / 2 if not shad else 8 * dpi
         self._imgs = []
         from PIL import ImageTk
-        for k in (0.0, 0.08, 0.14):   # normal, üstünde, basılı
+        for k in (0.0, 0.08, 0.14):   # normal, hover, pressed
             img = Image.new("RGBA", (w + 2 * sh, h + 2 * sh), (0, 0, 0, 0))
             base = fill if fill is not None else dlg.Pbg
             col = mix(base, fg, k) if (fill is not None or k) else None
@@ -5973,7 +5973,7 @@ class PillButton(tk.Label):
         self.bind("<Leave>", lambda _e: self.config(image=self._imgs[0]))
         self.bind("<ButtonPress-1>", lambda _e: self.config(image=self._imgs[2]))
         self.bind("<ButtonRelease-1>", self._release)
-        # klavye: Tab ile gelinir (vurgulu görünür), Boşluk / Enter basar
+        # keyboard: reached with Tab (shown highlighted), Space / Enter presses
         self.bind("<FocusIn>", lambda _e: self.config(image=self._imgs[1]))
         self.bind("<FocusOut>", lambda _e: self.config(image=self._imgs[0]))
         for key in ("<space>", "<Return>"):
@@ -5987,7 +5987,7 @@ class PillButton(tk.Label):
 
 
 class _Dialog:
-    """Widget'ın tasarım diline (Material You / shadcn) uyan tk penceresi tabanı (tek kopya)."""
+    """Base tk window matching the widget's design language (Material You / shadcn), single instance."""
     _open = {}
 
     def _setup(self, app, title):
@@ -6002,7 +6002,7 @@ class _Dialog:
         self.app = app
         P = self.P = app.pal_to
         shad = STYLE["shad"]
-        # M3 iletişim kutusu: surface-container-high; shadcn: kart zemini
+        # M3 dialog: surface-container-high; shadcn: card background
         self.Pbg = P["surface"] if shad else P["surface_high"]
         self.bg = _hx(self.Pbg)
         self.fg = _hx(P["on_surface"])
@@ -6034,8 +6034,8 @@ class _Dialog:
                           kind=kind or ("filled" if primary else "tonal"), small=small)
 
     def entry_box(self, parent, width, font=None, mono=False):
-        """Yuvarlak kenarlı (Material: hap, shadcn: 8 px + kenarlık) giriş alanı.
-        (kapsayıcı, Entry) döndürür; odaklanınca kenarlık birincil renge döner."""
+        """Rounded input (Material: pill, shadcn: 8 px + border).
+        Returns (container, Entry); the border turns primary on focus."""
         from PIL import ImageTk
         dpi = self.app.dpi
         w, h = round(width * dpi), round(44 * dpi)
@@ -6066,7 +6066,7 @@ class _Dialog:
         return c, e
 
     def switch(self, parent, text, value):
-        """Material / shadcn anahtar düğmesi + yazı. .get() ile değeri okunur."""
+        """Material / shadcn switch + label. Read the value with .get()."""
         from PIL import ImageTk
         dpi = self.app.dpi
         row = tk.Frame(parent, bg=self.bg, cursor="hand2")
@@ -6105,7 +6105,7 @@ class _Dialog:
 
 
 class ConnectDialog(_Dialog):
-    """Spotify hesabını bağlama (PKCE) penceresi."""
+    """Spotify account connection (PKCE) window."""
 
     def __init__(self, app, reauth=False):
         if not self._setup(app, T("dlg_title")):
@@ -6166,7 +6166,7 @@ class ConnectDialog(_Dialog):
             if self.app.web.auth_error:
                 return
             self.top.after(300, self._poll)
-        except tk.TclError:  # pencere kapatıldı
+        except tk.TclError:  # window closed
             pass
 
 
@@ -6219,7 +6219,7 @@ class SearchDialog(_Dialog):
                 self.top.after(120, wait)
                 return
             if "err" in res:
-                log("arama:", repr(res["err"]))
+                log("search:", repr(res["err"]))
                 self.status.config(text=T("err_http", code=getattr(res["err"], "code", "?")))
                 return
             self._show(res["items"])
@@ -6254,7 +6254,7 @@ class SearchDialog(_Dialog):
     def _do(self, what, uri):
         web = self.app.web
         if not web.has_control:
-            if what == "play":  # izin yoksa: Spotify uygulamasında aç
+            if what == "play":  # no permission: open in the Spotify app
                 open_spotify(uri)
             self.status.config(text=T("need_scope"))
             if not getattr(self, "_reauth_btn", None):
@@ -6283,7 +6283,7 @@ class SearchDialog(_Dialog):
             code = res.get("code")
             if code is None:
                 self.status.config(text=T("s_queued") if what == "queue" else "▶")
-            elif code in (403, 404):  # Premium yok ya da etkin cihaz yok
+            elif code in (403, 404):  # no Premium or no active device
                 open_spotify(uri)
                 self.status.config(text=T("s_premium"))
             else:
@@ -6305,7 +6305,7 @@ class AlarmDialog(_Dialog):
                  font=self.font(9)).pack(anchor="w", pady=(4, 12))
         row = tk.Frame(t, bg=self.bg)
         row.pack(anchor="w")
-        # saat seçici: büyük rakamlar + yukarı/aşağı düğmeleri (tekerlekle de değişir)
+        # time picker: big digits + up/down buttons (the wheel works too)
         self.h = self._picker(row, int(hh), 24)
         self.h.pack(side="left")
         tk.Label(row, text=":", bg=self.bg, fg=self.fg,
@@ -6321,7 +6321,7 @@ class AlarmDialog(_Dialog):
         t.focus_force()
 
     def _picker(self, parent, value, mod):
-        """Material saat seçici kutusu: tonal zeminde büyük rakam, üstte/altta ok düğmeleri."""
+        """Material time picker box: big digit on a tonal background, arrow buttons above/below."""
         box = tk.Frame(parent, bg=self.bg)
         state = {"v": value % mod}
         up = self.btn(box, "▲", lambda: step(1), small=True, kind="text")
@@ -6334,7 +6334,7 @@ class AlarmDialog(_Dialog):
             state["v"] = (state["v"] + d) % mod
             lbl.config(text=f"{state['v']:02d}")
 
-        for w_ in (box, up, lbl, down):  # tekerlek kutunun her yerinde çalışsın
+        for w_ in (box, up, lbl, down):  # wheel works anywhere on the box
             w_.bind("<MouseWheel>", lambda e: step(1 if e.delta > 0 else -1))
         up.pack()
         lbl.pack(pady=2)
@@ -6357,7 +6357,7 @@ class RecapWindow(_Dialog):
         from PIL import ImageTk
         self.img = app._render_recap(year)
         disp = self.img
-        if disp.height > 720:  # ekrana sığsın
+        if disp.height > 720:  # fit on the screen
             sc = 720 / disp.height
             disp = disp.resize((round(disp.width * sc), 720), Image.Resampling.LANCZOS)
         self.ph = ImageTk.PhotoImage(disp)
@@ -6385,7 +6385,7 @@ class RecapWindow(_Dialog):
 
 
 class SongDialog(_Dialog):
-    """Çalan şarkının özellikleri: kapak, sanatçılar, albüm, tarih, süre, sıra + senin dinlemen."""
+    """Current track details: cover, artists, album, date, length, position + your listening."""
 
     def __init__(self, app):
         st = app._view()
@@ -6401,12 +6401,12 @@ class SongDialog(_Dialog):
         self.tid = cur.get("id") if cur and cur.get("name") == st["title"] else None
         body = tk.Frame(t, bg=self.bg)
         body.pack(fill="both")
-        # kapak
+        # cover
         sz = round(210 * dpi)
         self._art_lbl = tk.Label(body, bg=self.bg)
         self._art_lbl.pack(side="left", anchor="n", padx=(0, 18))
         self._set_art(app.art_src, sz)
-        # bilgiler
+        # details
         info = tk.Frame(body, bg=self.bg)
         info.pack(side="left", fill="both", anchor="n")
         self.info = info
@@ -6428,7 +6428,7 @@ class SongDialog(_Dialog):
         liked = self.web.liked_state(st["title"])
         if liked is not None:
             self._meta(T("sd_liked"), "♥ " + T("osd_liked") if liked else "—")
-        # senin dinlemen (geçmişten)
+        # your listening (from history)
         tk.Frame(t, bg=self.line, height=1).pack(fill="x", pady=(16, 10))
         tk.Label(t, text=T("sd_yours"), bg=self.bg, fg=self.acc,
                  font=self.font(9, True)).pack(anchor="w")
@@ -6446,7 +6446,7 @@ class SongDialog(_Dialog):
         if self.tid and self.web.connected:
             self._load_track()
 
-    # -- yardımcılar
+    # -- helpers
     def _set_art(self, img, sz):
         from PIL import ImageTk
         if img is None:
@@ -6476,7 +6476,7 @@ class SongDialog(_Dialog):
         artist1 = (st.get("artist") or "").split(", ")[0].strip()
         tracks, _a = app._history_index()
         e = tracks.get(f'{st["title"]}\t{artist1}')
-        if not e:  # sanatçı adı farklı yazılmış olabilir: başlığa göre ara
+        if not e:  # the artist name may be spelled differently: search by title
             for k, v in tracks.items():
                 if k.partition("\t")[0] == st["title"]:
                     e = v
@@ -6498,7 +6498,7 @@ class SongDialog(_Dialog):
                 res["t"] = tr
                 imgs = sorted((tr.get("album") or {}).get("images") or [],
                               key=lambda i: -(i.get("width") or 0))
-                if imgs:  # en büyük kapak (640 px)
+                if imgs:  # largest cover (640 px)
                     res["img"] = Image.open(io.BytesIO(http_read(imgs[0]["url"], 10))).convert("RGB")
             except Exception as ex:  # noqa: BLE001
                 res["err"] = ex
@@ -6512,7 +6512,7 @@ class SongDialog(_Dialog):
                 return
             try:
                 self._apply(res)
-            except tk.TclError:  # pencere kapatıldı
+            except tk.TclError:  # window closed
                 pass
 
         wait()
@@ -6521,11 +6521,11 @@ class SongDialog(_Dialog):
         tr = res.get("t")
         if not tr:
             if res.get("err"):
-                log("şarkı bilgisi alınamadı:", repr(res["err"]))
+                log("could not fetch track info:", repr(res["err"]))
             return
         if res.get("img") is not None:
             self._set_art(res["img"], round(210 * self.app.dpi))
-        # sanatçılar (her biri tıklanabilir)
+        # artists (each clickable)
         for w_ in self.artists.winfo_children():
             w_.destroy()
         arts = tr.get("artists") or []
@@ -6587,7 +6587,7 @@ class SongDialog(_Dialog):
 
 
 class HistoryDialog(_Dialog):
-    """Dinleme geçmişinde (içe aktarılan + canlı) şarkı / sanatçı arama."""
+    """Search tracks / artists in the listening history (imported + live)."""
 
     def __init__(self, app, query=""):
         if not self._setup(app, T("hs_title")):
@@ -6608,7 +6608,7 @@ class HistoryDialog(_Dialog):
         st.configure("H.Treeview", background=self.bg, fieldbackground=self.bg,
                      foreground=self.fg, rowheight=26, borderwidth=0, font=self.font(10),
                      bordercolor=self.bg, lightcolor=self.bg, darkcolor=self.bg)
-        st.layout("H.Treeview", [("Treeview.treearea", {"sticky": "nswe"})])  # çerçevesiz
+        st.layout("H.Treeview", [("Treeview.treearea", {"sticky": "nswe"})])  # borderless
         st.configure("H.Treeview.Heading", background=self.field, foreground=self.dim,
                      relief="flat", font=self.font(9, True))
         st.map("H.Treeview", background=[("selected", _hx(self.P["secondary_container"]))],
@@ -6701,7 +6701,7 @@ class HistoryDialog(_Dialog):
         self.detail.config(text=T("hs_detail", name=name, dur=fmt_dur(e["sec"]),
                                   plays=f'{e["plays"]:,}'.replace(",", "."), days=e["days"],
                                   first=e["first"], last=e["last"], year=best))
-        # yıllara göre küçük çubuk grafik
+        # small bar chart by year
         c = self.chart
         c.delete("all")
         ys = sorted(e["years"])
@@ -6726,16 +6726,16 @@ class HistoryDialog(_Dialog):
         self.app._spotify_search(key if kind == "artist" else key.replace("\t", " "))
 
     def close(self):
-        self.app._hidx = (None,)  # arama dizinini bellekten bırak (gerekirse yeniden kurulur)
+        self.app._hidx = (None,)  # release the search index from memory (rebuilt if needed)
         super().close()
 
 
 if __name__ == "__main__":
-    # tek kopya: widget zaten açıksa ikincisini başlatma
+    # single instance: don't start a second one if the widget is already running
     ctypes.windll.kernel32.CreateMutexW(None, False, "Local\\SpotifyMaterialWidget")
     if ctypes.windll.kernel32.GetLastError() == 183:  # ERROR_ALREADY_EXISTS
         sys.exit(0)
-    # Windows zamanlayıcısı varsayılan 15,6 ms adımlarla çalışır: animasyonlar takılmasın diye 1 ms
+    # the Windows timer ticks in 15.6 ms steps by default: 1 ms so animations don't stutter
     ctypes.windll.winmm.timeBeginPeriod(1)
     try:
         App().run()

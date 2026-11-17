@@ -1,4 +1,4 @@
-"""Uygulama simgesini (icon.ico) oluşturur."""
+"""Builds the app icon (icon.ico)."""
 import os
 from PIL import Image, ImageDraw, ImageFont
 
@@ -16,4 +16,4 @@ d.text((N / 2, N / 2 + 10), "\uE8D6", font=f, fill=(30, 215, 96, 255), anchor="m
 sizes = [(s, s) for s in (16, 24, 32, 48, 64, 128, 256)]
 img.save(os.path.join(HERE, "icon.ico"), sizes=sizes)
 img.resize((256, 256), Image.Resampling.LANCZOS).save(os.path.join(HERE, "icon.png"))
-print("icon.ico hazır")
+print("icon.ico ready")

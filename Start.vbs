@@ -1,4 +1,4 @@
-' Spotify widget'ini konsol penceresi olmadan baslatir (cift tikla)
+' Starts the Spotify widget without a console window (double-click)
 Set fso = CreateObject("Scripting.FileSystemObject")
 Set sh = CreateObject("WScript.Shell")
 dir = fso.GetParentFolderName(WScript.ScriptFullName)
