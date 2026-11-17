@@ -6734,6 +6734,10 @@ if __name__ == "__main__":
     # single instance: don't start a second one if the widget is already running
     ctypes.windll.kernel32.CreateMutexW(None, False, "Local\\SpotifyMaterialWidget")
     if ctypes.windll.kernel32.GetLastError() == 183:  # ERROR_ALREADY_EXISTS
+        # say so instead of exiting silently (a second copy, e.g. a fresh download, looks broken)
+        ctypes.windll.user32.MessageBoxW(
+            None, "Spotify Widget zaten çalışıyor." if default_lang() == "tr"
+            else "Spotify Widget is already running.", "Spotify Widget", 0x40)  # MB_ICONINFORMATION
         sys.exit(0)
     # the Windows timer ticks in 15.6 ms steps by default: 1 ms so animations don't stutter
     ctypes.windll.winmm.timeBeginPeriod(1)
