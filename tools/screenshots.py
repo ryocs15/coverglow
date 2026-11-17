@@ -21,7 +21,7 @@ with open(os.path.join(TMP, "config.json"), "w", encoding="utf-8") as f:
     json.dump({"lang": "en", "startup": False, "memory": False, "toast": False}, f)
 sys.path.insert(0, TMP)
 import coverglow as s  # noqa: E402
-from PIL import Image, ImageDraw, ImageFilter  # noqa: E402
+from PIL import Image, ImageDraw, ImageFilter, ImageFont  # noqa: E402
 
 random.seed(7)
 
@@ -139,13 +139,23 @@ def backdrop(w, h, c1, c2):
     return bg.filter(ImageFilter.GaussianBlur(40)).convert("RGBA")
 
 
-def sheet(name, imgs, c1, c2, pad=36, gap=28):
+def sheet(name, imgs, c1, c2, pad=36, gap=28, brand=False):
+    head = 96 if brand else 0  # app icon + name above the widgets
     w = sum(i.width for i in imgs) + gap * (len(imgs) - 1) + 2 * pad
-    h = max(i.height for i in imgs) + 2 * pad
+    h = max(i.height for i in imgs) + 2 * pad + head
     out = backdrop(w, h, c1, c2)
+    if brand:
+        icon = Image.open(os.path.join(ROOT, "icon.png")).convert("RGBA").resize((80, 80), Image.LANCZOS)
+        out.alpha_composite(icon, (pad - 8, pad - 4))
+        font = ImageFont.truetype(os.path.join(ROOT, "fonts", "Geist-SemiBold.ttf"), 40)
+        sub = ImageFont.truetype(os.path.join(ROOT, "fonts", "Geist-Regular.ttf"), 19)
+        d = ImageDraw.Draw(out)
+        d.text((pad + 84, pad + 16), "Coverglow", font=font, fill=(255, 255, 255), anchor="lm")
+        d.text((pad + 86, pad + 54), "A desktop widget for Spotify on Windows", font=sub,
+               fill=(255, 255, 255, 200), anchor="lm")
     x = pad
     for i in imgs:
-        out.alpha_composite(i, (x, pad))
+        out.alpha_composite(i, (x, pad + head))
         x += i.width + gap
     out.convert("RGB").save(os.path.join(OUT, name), optimize=True)
 
@@ -163,7 +173,7 @@ def column(imgs, gap=20):
 os.makedirs(OUT, exist_ok=True)
 sheet("hero.png", [render("q", track="sunset", tab="queue"),
                    render("l", theme="light", track="ocean", tab="lyrics"),
-                   render("s", track="violet", tab="stats")], (40, 40, 60), (110, 70, 90))
+                   render("s", track="violet", tab="stats")], (40, 40, 60), (110, 70, 90), brand=True)
 sheet("themes.png", [render("m", track="forest", show_queue=False),
                      render("sh", ui="shadcn", track="ocean", show_queue=False),
                      render("nl", ui="neu", theme="light", show_queue=False),

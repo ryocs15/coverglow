@@ -2271,6 +2271,10 @@ class App:
         # window
         self.root = tk.Tk()
         self.root.title("Coverglow")
+        try:  # default=: every dialog gets the app icon instead of the tk feather
+            self.root.iconbitmap(default=os.path.join(os.path.dirname(BUNDLED_FONTS), "icon.ico"))
+        except tk.TclError:
+            pass
         self.root.report_callback_exception = lambda *a: log(
             "".join(traceback.format_exception(*a)))
         self.root.overrideredirect(True)
