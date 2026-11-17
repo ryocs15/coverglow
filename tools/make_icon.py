@@ -3,7 +3,7 @@ import math
 import os
 from PIL import Image, ImageChops, ImageDraw, ImageFilter
 
-HERE = os.path.dirname(os.path.abspath(__file__))
+HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # repo root
 N = 1024
 C1, C2, C3 = (255, 170, 80), (240, 80, 140), (130, 70, 230)  # amber → pink → violet
 

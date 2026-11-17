@@ -1,12 +1,23 @@
-<img src="icon.png" width="96" alt="Coverglow icon">
+<p align="center">
+  <img src="icon.png" width="112" alt="Coverglow icon">
+</p>
 
-# Coverglow
+<h1 align="center">Coverglow</h1>
 
-A desktop widget for Spotify on Windows. It sits on the desktop below your windows, colors itself from the current album cover (Material You), and shows the queue, synced lyrics and your listening stats.
+<p align="center">
+  A desktop widget for Spotify on Windows.<br>
+  It sits on the desktop below your windows, colors itself from the current album cover (Material You),<br>
+  and shows the queue, synced lyrics and your listening stats.
+</p>
 
-![Material You widget with the queue, lyrics and stats tabs](docs/hero.png)
+<p align="center">
+  <a href="https://github.com/ryocs15/coverglow/releases/latest"><b>⬇ Download Coverglow.exe</b></a>
+  &nbsp;·&nbsp; Windows 10 / 11 &nbsp;·&nbsp; no install needed
+</p>
 
-> Screenshots use made-up tracks and generated covers. `tools/screenshots.py` renders them.
+![Coverglow widgets showing the queue, lyrics and stats tabs](docs/hero.png)
+
+<sub>Screenshots use made-up tracks and generated covers (`tools/screenshots.py`).</sub>
 
 ## Features
 
@@ -29,9 +40,27 @@ A desktop widget for Spotify on Windows. It sits on the desktop below your windo
 - **Share card:** copies an image of the current track to the clipboard.
 - **Two UI languages:** English and Turkish, picked from the Windows display language.
 
-| Design languages | Mini mode | Settings menu |
-|---|---|---|
-| ![Material, shadcn and Neumorphic themes](docs/themes.png) | ![Mini mode](docs/mini.png) | ![Appearance menu](docs/menu.png) |
+### Design languages
+
+Material You, shadcn/ui, and Neumorphic in light and dark:
+
+![Material You, shadcn/ui and Neumorphic widgets](docs/themes.png)
+
+### Mini mode and settings
+
+<p>
+  <img src="docs/mini.png" height="300" alt="Mini mode in three designs">
+  &nbsp;
+  <img src="docs/menu.png" height="300" alt="Appearance settings menu">
+</p>
+
+## Download
+
+1. Get `Coverglow.exe` from the [latest release](https://github.com/ryocs15/coverglow/releases/latest).
+2. Put it in its own folder. Settings, stats and the log are saved next to it.
+3. Run it. The exe is unsigned, so SmartScreen may warn the first time: choose *More info → Run anyway*.
+
+To quit, right-click the widget and pick **Close** from the menu.
 
 ## Requirements
 

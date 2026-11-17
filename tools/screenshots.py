@@ -139,24 +139,29 @@ def backdrop(w, h, c1, c2):
     return bg.filter(ImageFilter.GaussianBlur(40)).convert("RGBA")
 
 
-def sheet(name, imgs, c1, c2, pad=36, gap=28, brand=False):
+def sheet(name, imgs, c1, c2, pad=36, gap=28, brand=False, size=None):
+    """size: final (w, h); the layout is centered on a wider canvas of that aspect, then scaled."""
     head = 96 if brand else 0  # app icon + name above the widgets
-    w = sum(i.width for i in imgs) + gap * (len(imgs) - 1) + 2 * pad
+    cw = sum(i.width for i in imgs) + gap * (len(imgs) - 1) + 2 * pad
     h = max(i.height for i in imgs) + 2 * pad + head
+    w = max(cw, round(h * size[0] / size[1])) if size else cw
     out = backdrop(w, h, c1, c2)
+    px = pad + (w - cw) // 2  # x start of the centered layout
     if brand:
         icon = Image.open(os.path.join(ROOT, "icon.png")).convert("RGBA").resize((80, 80), Image.LANCZOS)
-        out.alpha_composite(icon, (pad - 8, pad - 4))
+        out.alpha_composite(icon, (px - 8, pad - 4))
         font = ImageFont.truetype(os.path.join(ROOT, "fonts", "Geist-SemiBold.ttf"), 40)
         sub = ImageFont.truetype(os.path.join(ROOT, "fonts", "Geist-Regular.ttf"), 19)
         d = ImageDraw.Draw(out)
-        d.text((pad + 84, pad + 16), "Coverglow", font=font, fill=(255, 255, 255), anchor="lm")
-        d.text((pad + 86, pad + 54), "A desktop widget for Spotify on Windows", font=sub,
+        d.text((px + 84, pad + 16), "Coverglow", font=font, fill=(255, 255, 255), anchor="lm")
+        d.text((px + 86, pad + 54), "A desktop widget for Spotify on Windows", font=sub,
                fill=(255, 255, 255, 200), anchor="lm")
-    x = pad
+    x = px
     for i in imgs:
         out.alpha_composite(i, (x, pad + head))
         x += i.width + gap
+    if size:
+        out = out.resize(size, Image.LANCZOS)
     out.convert("RGB").save(os.path.join(OUT, name), optimize=True)
 
 
@@ -181,6 +186,9 @@ sheet("themes.png", [render("m", track="forest", show_queue=False),
 sheet("mini.png", [column([render("m1", track="sunset", mini=True),
                            render("m2", ui="shadcn", theme="light", track="ocean", mini=True),
                            render("m3", ui="neu", track="violet", mini=True)])], (60, 60, 80), (120, 90, 110))
+# 1280x640 social preview (GitHub: Settings → Social preview)
+sheet("social.png", [shots["q"], shots["l"], shots["s"]], (40, 40, 60), (110, 70, 90), brand=True,
+      size=(1280, 640))
 render("menu_bg", track="violet", show_queue=False)
 sheet("menu.png", [menu_shot()], (60, 50, 90), (30, 30, 50))
 a.root.destroy()
