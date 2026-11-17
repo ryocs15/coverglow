@@ -64,7 +64,7 @@ Reply to the user in the language they write in (the maintainer writes in Turkis
 2. Test visual changes headless: create `App()` in a script, stub out `a.cfg.save` and `a.media.command`,
    set the state, call `a.base_key = None; a._render_all()`, save `a.base` as PNG and inspect it. Check
    both languages and mini/normal mode. `tools/screenshots.py` renders the README images.
-3. Build: `cd D:\Calude\spotify_widget; Stop-Process -Name Coverglow;
+3. Build: `cd D:\Calude\coverglow; Stop-Process -Name Coverglow;
    python -m PyInstaller --noconfirm Coverglow.spec` → start `dist\Coverglow.exe`,
    check `dist\widget.log` for new errors.
 4. Commit and push (short English commit message).
