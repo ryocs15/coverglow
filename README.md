@@ -1,3 +1,5 @@
+<img src="icon.png" width="96" alt="Coverglow icon">
+
 # Coverglow
 
 A desktop widget for Spotify on Windows. It sits on the desktop below your windows, colors itself from the current album cover (Material You), and shows the queue, synced lyrics and your listening stats.
