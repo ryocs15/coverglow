@@ -1,6 +1,6 @@
-# Spotify Desktop Widget
+# Coverglow
 
-A Spotify widget for the Windows desktop. It sits on the desktop below your windows, colors itself from the current album cover (Material You), and shows the queue, synced lyrics and your listening stats.
+A desktop widget for Spotify on Windows. It sits on the desktop below your windows, colors itself from the current album cover (Material You), and shows the queue, synced lyrics and your listening stats.
 
 ![Material You widget with the queue, lyrics and stats tabs](docs/hero.png)
 
@@ -51,7 +51,7 @@ pip install -r requirements.txt
 ```
 
 ```bash
-python spotify_widget.py
+python coverglow.py
 ```
 
 To start it without a console window, double-click `Start.vbs`.
@@ -63,10 +63,10 @@ pip install pyinstaller
 ```
 
 ```bash
-python -m PyInstaller --noconfirm SpotifyWidget.spec
+python -m PyInstaller --noconfirm Coverglow.spec
 ```
 
-The output is `dist\SpotifyWidget.exe`. Settings, stats and the log are stored next to the exe. When run as the exe, the widget adds itself to Windows startup; you can turn this off in the menu.
+The output is `dist\Coverglow.exe`. Settings, stats and the log are stored next to the exe. When run as the exe, the widget adds itself to Windows startup; you can turn this off in the menu.
 
 ## Linking your Spotify account (optional)
 
@@ -98,7 +98,7 @@ The refresh token is saved in `config.json`, which is git-ignored. Keep that fil
 
 ## How it works
 
-- Everything is in one file, `spotify_widget.py`.
+- Everything is in one file, `coverglow.py`.
 - The widget is drawn with Pillow and pushed to a per-pixel-alpha layered window (`UpdateLayeredWindowIndirect`). Tkinter is only used for events and dialogs.
 - Track info comes from the Windows Global System Media Transport Controls (GSMTC) through `winrt`.
 - The queue, likes and search use the Spotify Web API.

@@ -15,12 +15,12 @@ from datetime import date, timedelta
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, "docs")
 TMP = tempfile.mkdtemp()
-shutil.copy(os.path.join(ROOT, "spotify_widget.py"), TMP)
+shutil.copy(os.path.join(ROOT, "coverglow.py"), TMP)
 shutil.copytree(os.path.join(ROOT, "fonts"), os.path.join(TMP, "fonts"))
 with open(os.path.join(TMP, "config.json"), "w", encoding="utf-8") as f:
     json.dump({"lang": "en", "startup": False, "memory": False, "toast": False}, f)
 sys.path.insert(0, TMP)
-import spotify_widget as s  # noqa: E402
+import coverglow as s  # noqa: E402
 from PIL import Image, ImageDraw, ImageFilter  # noqa: E402
 
 random.seed(7)

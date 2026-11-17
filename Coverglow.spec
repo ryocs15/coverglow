@@ -9,7 +9,7 @@ hiddenimports += collect_submodules('winrt')
 
 
 a = Analysis(
-    ['spotify_widget.py'],
+    ['coverglow.py'],
     pathex=[],
     binaries=binaries,
     datas=[('fonts/Geist-Regular.ttf', 'fonts'), ('fonts/Geist-SemiBold.ttf', 'fonts'),
@@ -33,7 +33,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='SpotifyWidget',
+    name='Coverglow',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

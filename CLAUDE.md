@@ -1,13 +1,13 @@
-# Spotify Desktop Widget
+# Coverglow
 
-A Material You style Spotify desktop widget for Windows, written in Python.
+Coverglow: a Material You style Spotify desktop widget for Windows, written in Python.
 Reply to the user in the language they write in (the maintainer writes in Turkish).
 
 ## Project
-- The whole app is one file: `spotify_widget.py` (~6700 lines).
+- The whole app is one file: `coverglow.py` (~6700 lines).
 - Python 3.15, Windows 11. Dependencies: Pillow, winrt (Windows.Media.Control etc.), pycaw/comtypes,
   fontTools, PyInstaller.
-- Git repo: github.com/ryocs15/spotify-widget.
+- Git repo: github.com/ryocs15/coverglow.
   git: `%LOCALAPPDATA%\Programs\MinGit\cmd\git.exe`, gh: `%LOCALAPPDATA%\Programs\GitHubCLI\bin\gh.exe`
 
 ## Architecture
@@ -52,7 +52,7 @@ Reply to the user in the language they write in (the maintainer writes in Turkis
 - Don't send commands that play/change the user's music (play, queue, transfer, seek) for testing on your
   own; ask first if needed.
 - If you call the Spotify Web API from a script, stop the running exe first (`Stop-Process -Name
-  SpotifyWidget`) and restart it afterwards: two copies can clash when the token refreshes.
+  Coverglow`) and restart it afterwards: two copies can clash when the token refreshes.
 - Spotify notes: the old `/me/tracks` endpoint returns 403, `/me/library` is used. Playback control needs
   Premium. If you add a new scope the user must reconnect their account; say so.
 - Don't break existing features: mini mode, growing upward at the bottom of the screen, toast over
@@ -64,8 +64,8 @@ Reply to the user in the language they write in (the maintainer writes in Turkis
 2. Test visual changes headless: create `App()` in a script, stub out `a.cfg.save` and `a.media.command`,
    set the state, call `a.base_key = None; a._render_all()`, save `a.base` as PNG and inspect it. Check
    both languages and mini/normal mode. `tools/screenshots.py` renders the README images.
-3. Build: `cd D:\Calude\spotify_widget; Stop-Process -Name SpotifyWidget;
-   python -m PyInstaller --noconfirm SpotifyWidget.spec` → start `dist\SpotifyWidget.exe`,
+3. Build: `cd D:\Calude\spotify_widget; Stop-Process -Name Coverglow;
+   python -m PyInstaller --noconfirm Coverglow.spec` → start `dist\Coverglow.exe`,
    check `dist\widget.log` for new errors.
 4. Commit and push (short English commit message).
 5. At the end, state clearly what you changed, what you tested and what you couldn't try in real use.

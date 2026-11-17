@@ -1,5 +1,5 @@
 """
-Spotify Desktop Widget — Material You (Windows 10/11)
+Coverglow — a Material You desktop widget for Spotify (Windows 10/11)
 
 - Sticks to the desktop like Rainmeter: stays below windows, survives Win+D,
   hidden from the taskbar / Alt+Tab.
@@ -115,7 +115,7 @@ IC_CAL, IC_VOL, IC_MUTE, IC_ALARM = "\uE787", "\uE767", "\uE74F", "\uEA8F"
 REDIRECT_URI = "http://127.0.0.1:8888/callback"
 SCOPES = ("user-read-playback-state user-read-currently-playing "
           "user-library-read user-library-modify user-modify-playback-state")
-UA = "SpotifyDesktopWidget/1.0 (+https://lrclib.net)"
+UA = "Coverglow/1.0 (+https://lrclib.net)"
 
 
 # ------------------------------------------------------------------ language
@@ -2270,7 +2270,7 @@ class App:
 
         # window
         self.root = tk.Tk()
-        self.root.title("Spotify Widget")
+        self.root.title("Coverglow")
         self.root.report_callback_exception = lambda *a: log(
             "".join(traceback.format_exception(*a)))
         self.root.overrideredirect(True)
@@ -3432,7 +3432,7 @@ class App:
         out = img.convert("RGB")
         copy_image_to_clipboard(out)
         try:
-            pics = os.path.join(os.path.expanduser("~"), "Pictures", "SpotifyWidget")
+            pics = os.path.join(os.path.expanduser("~"), "Pictures", "Coverglow")
             os.makedirs(pics, exist_ok=True)
             safe = "".join(c for c in st["title"] if c not in '<>:"/\\|?*')[:60].strip() or "song"
             out.save(os.path.join(pics, f"{safe}.png"))
@@ -4963,7 +4963,7 @@ class App:
     def _startup_on(cls):
         try:
             with winreg.OpenKey(winreg.HKEY_CURRENT_USER, cls.RUN_KEY) as k:
-                winreg.QueryValueEx(k, "SpotifyWidget")
+                winreg.QueryValueEx(k, "Coverglow")
             return True
         except OSError:
             return False
@@ -4982,10 +4982,10 @@ class App:
                         pyw = os.path.join(os.path.dirname(sys.executable), "pythonw.exe")
                         cmd = f'"{pyw if os.path.exists(pyw) else sys.executable}" ' \
                               f'"{os.path.abspath(__file__)}"'
-                    winreg.SetValueEx(k, "SpotifyWidget", 0, winreg.REG_SZ, cmd)
-                else:
+                    winreg.SetValueEx(k, "Coverglow", 0, winreg.REG_SZ, cmd)
+                for name in (() if on else ("Coverglow",)) + ("SpotifyWidget",):  # + pre-rename entry
                     try:
-                        winreg.DeleteValue(k, "SpotifyWidget")
+                        winreg.DeleteValue(k, name)
                     except FileNotFoundError:
                         pass
         except OSError as e:
@@ -6732,12 +6732,12 @@ class HistoryDialog(_Dialog):
 
 if __name__ == "__main__":
     # single instance: don't start a second one if the widget is already running
-    ctypes.windll.kernel32.CreateMutexW(None, False, "Local\\SpotifyMaterialWidget")
+    ctypes.windll.kernel32.CreateMutexW(None, False, "Local\\Coverglow")
     if ctypes.windll.kernel32.GetLastError() == 183:  # ERROR_ALREADY_EXISTS
         # say so instead of exiting silently (a second copy, e.g. a fresh download, looks broken)
         ctypes.windll.user32.MessageBoxW(
-            None, "Spotify Widget zaten çalışıyor." if default_lang() == "tr"
-            else "Spotify Widget is already running.", "Spotify Widget", 0x40)  # MB_ICONINFORMATION
+            None, "Coverglow zaten çalışıyor." if default_lang() == "tr"
+            else "Coverglow is already running.", "Coverglow", 0x40)  # MB_ICONINFORMATION
         sys.exit(0)
     # the Windows timer ticks in 15.6 ms steps by default: 1 ms so animations don't stutter
     ctypes.windll.winmm.timeBeginPeriod(1)

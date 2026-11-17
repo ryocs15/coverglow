@@ -4,7 +4,7 @@ import os
 import tempfile
 from types import SimpleNamespace
 
-import spotify_widget as s
+import coverglow as s
 
 
 def test_import_dedupes_both_export_formats():
