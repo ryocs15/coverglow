@@ -116,4 +116,8 @@ python test_core.py
 - Lyrics by [LRCLIB](https://lrclib.net).
 - shadcn/ui colors from [shadcn-ui/ui](https://github.com/shadcn-ui/ui).
 
+## License
+
+MIT, see [LICENSE](LICENSE). The Geist fonts keep their own OFL license.
+
 This is an unofficial project and is not affiliated with Spotify.
