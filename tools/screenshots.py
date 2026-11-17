@@ -140,13 +140,15 @@ def backdrop(w, h, c1, c2):
 
 
 def sheet(name, imgs, c1, c2, pad=36, gap=28, brand=False, size=None):
-    """size: final (w, h); the layout is centered on a wider canvas of that aspect, then scaled."""
+    """size: final (w, h); the layout is centered on a canvas of that aspect, then scaled."""
     head = 96 if brand else 0  # app icon + name above the widgets
     cw = sum(i.width for i in imgs) + gap * (len(imgs) - 1) + 2 * pad
-    h = max(i.height for i in imgs) + 2 * pad + head
-    w = max(cw, round(h * size[0] / size[1])) if size else cw
+    ch = max(i.height for i in imgs) + 2 * pad + head
+    w, h = cw, ch
+    if size:  # grow whichever side is short of the target aspect, so the scale never distorts
+        w, h = max(cw, round(ch * size[0] / size[1])), max(ch, round(cw * size[1] / size[0]))
     out = backdrop(w, h, c1, c2)
-    px = pad + (w - cw) // 2  # x start of the centered layout
+    px, pad = pad + (w - cw) // 2, pad + (h - ch) // 2  # top left of the centered layout
     if brand:
         icon = Image.open(os.path.join(ROOT, "icon.png")).convert("RGBA").resize((80, 80), Image.LANCZOS)
         out.alpha_composite(icon, (px - 8, pad - 4))
