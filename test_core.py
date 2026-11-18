@@ -59,6 +59,16 @@ def test_tick_keeps_running_after_error():
     assert len(calls) == 1, "next frame not scheduled after an error"
 
 
+def test_config_encrypts_token_and_migrates_plaintext():
+    s.CONFIG_PATH = os.path.join(tempfile.mkdtemp(), "config.json")
+    json.dump({"client_id": "x", "refresh_token": "secret-rt"}, open(s.CONFIG_PATH, "w"))
+    c = s.Config()  # old plain-text file: encrypted on load
+    assert c["refresh_token"] == "secret-rt"
+    raw = open(s.CONFIG_PATH, encoding="utf-8").read()
+    assert "secret-rt" not in raw and "refresh_token_enc" in raw, raw
+    assert s.Config()["refresh_token"] == "secret-rt"  # round trip
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

@@ -524,7 +524,26 @@ def time_ago(ts):
 
 
 # ------------------------------------------------------------------ settings
+class _Blob(ctypes.Structure):
+    _fields_ = [("cbData", wintypes.DWORD), ("pbData", ctypes.POINTER(ctypes.c_char))]
+
+
+def _dpapi(data, protect):
+    """Windows DPAPI: only this Windows user on this PC can decrypt (other programs reading the file can't)."""
+    buf = ctypes.create_string_buffer(data, len(data))
+    src, out = _Blob(len(data), ctypes.cast(buf, ctypes.POINTER(ctypes.c_char))), _Blob()
+    fn = ctypes.windll.crypt32.CryptProtectData if protect else ctypes.windll.crypt32.CryptUnprotectData
+    if not fn(ctypes.byref(src), None, None, None, None, 0x1, ctypes.byref(out)):  # UI_FORBIDDEN
+        raise OSError("DPAPI failed")
+    try:
+        return ctypes.string_at(out.pbData, out.cbData)
+    finally:
+        ctypes.windll.kernel32.LocalFree(out.pbData)
+
+
 class Config(dict):
+    """config.json; the Spotify refresh token is stored DPAPI-encrypted as refresh_token_enc."""
+
     def __init__(self):
         super().__init__()
         self.lock = threading.Lock()
@@ -533,11 +552,24 @@ class Config(dict):
                 self.update(json.load(f))
         except Exception:
             pass
+        enc = self.pop("refresh_token_enc", None)
+        if enc:
+            try:
+                self["refresh_token"] = _dpapi(base64.b64decode(enc), False).decode()
+            except Exception as e:  # other user / PC: the user reconnects
+                log("could not decrypt the saved token:", repr(e))
+                self.pop("refresh_token", None)
+        elif self.get("refresh_token"):
+            self.save()  # older versions stored it in plain text: encrypt it now
 
     def save(self):
         with self.lock:
             try:
-                save_json(CONFIG_PATH, dict(self), indent=1)
+                d = dict(self)
+                rt = d.pop("refresh_token", None)
+                if rt:
+                    d["refresh_token_enc"] = base64.b64encode(_dpapi(rt.encode(), True)).decode()
+                save_json(CONFIG_PATH, d, indent=1)
             except Exception as e:
                 log("could not save config:", e)
 
@@ -2107,7 +2139,8 @@ class SpotifyWeb:
                   "code_challenge": challenge, "state": state, "scope": SCOPES}
         webbrowser.open("https://accounts.spotify.com/authorize?" + urllib.parse.urlencode(params))
         deadline = time.time() + 300
-        while "code" not in result and time.time() < deadline:
+        # only the redirect carrying our state ends the wait: a stray /callback from a web page can't cancel it
+        while result.get("state") != state and time.time() < deadline:
             server.handle_request()
         server.server_close()
         if not result.get("code") or result.get("state") != state:
