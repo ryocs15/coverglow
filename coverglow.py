@@ -118,7 +118,23 @@ IC_CAL, IC_VOL, IC_MUTE, IC_ALARM = "\uE787", "\uE767", "\uE74F", "\uEA8F"
 REDIRECT_URI = "http://127.0.0.1:8888/callback"
 SCOPES = ("user-read-playback-state user-read-currently-playing "
           "user-library-read user-library-modify user-modify-playback-state")
-UA = "Coverglow/1.0 (+https://lrclib.net)"
+APP_VERSION = "1.2.0"  # keep in sync with AppVersion in Coverglow.iss (test_core checks it)
+UA = f"Coverglow/{APP_VERSION} (+https://github.com/ryocs15/coverglow)"
+RELEASES_URL = "https://github.com/ryocs15/coverglow/releases/latest"
+
+
+def version_tuple(v):
+    """'v1.10.0' -> (1, 10, 0), so versions compare as numbers, not text."""
+    return tuple(int(x) for x in v.strip().lstrip("vV").split(".") if x.isdigit())
+
+
+def latest_release():
+    """Tag of the newest GitHub release if it is newer than this build, else None."""
+    req = urllib.request.Request(
+        "https://api.github.com/repos/ryocs15/coverglow/releases/latest",
+        headers={"User-Agent": UA, "Accept": "application/vnd.github+json"})
+    tag = json.loads(http_read(req, timeout=10)).get("tag_name", "")
+    return tag if version_tuple(tag) > version_tuple(APP_VERSION) else None
 
 
 # ------------------------------------------------------------------ language
@@ -237,7 +253,7 @@ STRINGS = {
         "m_showlist": "Sıradaki / son çalınanlar kartını göster",
         "m_notify": "Şarkı değişince bildirim göster",
         "m_connect": "Spotify hesabını bağla…", "m_disconnect": "Spotify bağlantısını kaldır",
-        "m_open": "Spotify'ı aç", "m_startup": "Windows açılışında başlat", "m_close": "Kapat",
+        "m_open": "Spotify'ı aç", "m_startup": "Windows açılışında başlat", "m_close": "Kapat", "upd_new": "Yeni sürüm var: {v}",
         # bağlantı penceresi
         "dlg_title": "Spotify Hesabını Bağla", "dlg_head": "Spotify hesabını bağla",
         "dlg_steps": ("Sıradaki listesi ve Beğen butonu Spotify Web API ile çalışır. "
@@ -366,7 +382,7 @@ STRINGS = {
         "m_showlist": "Show Up next / Recent card",
         "m_notify": "Notify on song change",
         "m_connect": "Connect Spotify account…", "m_disconnect": "Disconnect Spotify",
-        "m_open": "Open Spotify", "m_startup": "Start with Windows", "m_close": "Close",
+        "m_open": "Open Spotify", "m_startup": "Start with Windows", "m_close": "Close", "upd_new": "New version available: {v}",
         "dlg_title": "Connect Spotify Account", "dlg_head": "Connect your Spotify account",
         "dlg_steps": ("Up next and the Like button use the Spotify Web API. "
                       "One-time setup:\n\n"
@@ -2204,6 +2220,9 @@ class App:
             # Dev / test copies must not touch the user's startup entry.
             self._set_startup(True)
         self._start_t = time.monotonic()
+        self.update_tag = None    # newer release tag, shown in the menu
+        if FROZEN:  # dev / test copies stay offline
+            threading.Thread(target=self._check_update, daemon=True).start()
         self.cfg.setdefault("react", True)
         self.cfg.setdefault("duck", True)
         self.cfg.setdefault("osd", True)
@@ -5008,6 +5027,12 @@ class App:
         except OSError:
             return False
 
+    def _check_update(self):
+        try:
+            self.update_tag = latest_release()
+        except Exception as e:  # noqa: BLE001 - offline or rate limited: just skip
+            log("update check:", repr(e))
+
     def _set_startup(self, on):
         """Launch at Windows startup: HKCU\\...\\Run entry (shown in Task Manager > Startup)."""
         self.cfg["startup"] = bool(on)
@@ -5479,7 +5504,10 @@ class MenuPanel:
                 {"t": "sep"},
                 {"t": "action", "id": "a_close", "icon": MI["close"], "label": T("m_close"),
                  "do": self._then_close(app.root.destroy)},
-            ]
+            ] + ([{"t": "action", "id": "a_upd", "icon": MI["open"],
+                   "label": T("upd_new", v=app.update_tag),
+                   "do": self._then_close(lambda: webbrowser.open(RELEASES_URL))}]
+                 if app.update_tag else [{"t": "info", "label": f"Coverglow {APP_VERSION}"}])
         title = {"look": T("mn_appearance"), "alpha": T("mn_transparency"),
                  "widget": T("mn_widget"), "notif": T("mn_notif"), "sleep": T("m_sleep"),
                  "alarm": T("m_alarm"), "devices": T("m_devices"), "account": T("mn_account"),
@@ -6433,7 +6461,6 @@ class SongDialog(_Dialog):
             return
         if not self._setup(app, st["title"]):
             return
-        from PIL import ImageTk
         self.st = st
         t, dpi = self.top, app.dpi
         self.web = app.web

@@ -69,6 +69,14 @@ def test_config_encrypts_token_and_migrates_plaintext():
     assert s.Config()["refresh_token"] == "secret-rt"  # round trip
 
 
+def test_version_compare_and_installer_in_sync():
+    assert s.version_tuple("v1.10.0") > s.version_tuple("1.9.3")
+    assert s.version_tuple("v1.2.0") == s.version_tuple(s.APP_VERSION)
+    iss = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "Coverglow.iss"),
+               encoding="utf-8").read()
+    assert f'#define AppVersion "{s.APP_VERSION}"' in iss, "bump AppVersion in Coverglow.iss"
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):
