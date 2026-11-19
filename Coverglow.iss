@@ -1,4 +1,4 @@
-; Installer for dist\Coverglow.exe (build the exe first). Inno Setup 6:
+﻿; Installer for dist\Coverglow.exe (build the exe first). Inno Setup 6:
 ;   ISCC Coverglow.iss  ->  dist\CoverglowSetup.exe
 ; Settings and stats live in %APPDATA%\Coverglow, not in the install folder.
 
@@ -28,6 +28,10 @@ LicenseFile=LICENSE
 [Languages]
 Name: "en"; MessagesFile: "compiler:Default.isl"
 Name: "tr"; MessagesFile: "compiler:Languages\Turkish.isl"
+
+[CustomMessages]
+en.DelData=Also delete your Coverglow settings, stats and listening history?
+tr.DelData=Coverglow ayarların, istatistiklerin ve dinleme geçmişin de silinsin mi?
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
@@ -66,5 +70,11 @@ procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin
   // the app writes its own startup entry; remove it so Windows doesn't try to launch a deleted exe
   if CurUninstallStep = usPostUninstall then
+  begin
     RegDeleteValue(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Run', 'Coverglow');
+    // default No (and silent uninstall keeps them), so a reinstall keeps the user's data
+    if not UninstallSilent and (MsgBox(CustomMessage('DelData'), mbConfirmation,
+        MB_YESNO or MB_DEFBUTTON2) = IDYES) then
+      DelTree(ExpandConstant('{userappdata}\Coverglow'), True, True, True);
+  end;
 end;

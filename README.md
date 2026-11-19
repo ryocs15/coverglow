@@ -60,7 +60,7 @@ Material You, shadcn/ui, and Neumorphic in light and dark:
 2. Run it and pick an install folder. No admin rights needed. The setup is unsigned, so SmartScreen may warn the first time: choose *More info → Run anyway*.
 3. Coverglow starts after setup and with Windows. Settings, stats and the log are kept in `%APPDATA%\Coverglow`, so they survive updates and reinstalls.
 
-To update, run the new setup over the old install. Uninstall from Windows Settings → Apps; your settings stay in `%APPDATA%\Coverglow` until you delete that folder.
+When a new release is out, the menu shows *New version available*; run the new setup over the old install to update. Uninstall from Windows Settings → Apps; it asks whether to delete your settings and stats too (default: keep them).
 
 To quit, right-click the widget and pick **Close** from the menu.
 
