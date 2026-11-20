@@ -2,6 +2,9 @@
 import json
 import os
 import tempfile
+import threading
+import time
+import urllib.error
 from types import SimpleNamespace
 
 import coverglow as s
@@ -67,6 +70,56 @@ def test_config_encrypts_token_and_migrates_plaintext():
     raw = open(s.CONFIG_PATH, encoding="utf-8").read()
     assert "secret-rt" not in raw and "refresh_token_enc" in raw, raw
     assert s.Config()["refresh_token"] == "secret-rt"  # round trip
+
+
+def test_corrupt_config_is_set_aside_not_overwritten():
+    s.CONFIG_PATH = os.path.join(tempfile.mkdtemp(), "config.json")
+    open(s.CONFIG_PATH, "w").write("")  # e.g. empty after a power cut
+    c = s.Config()
+    c["x"] = 1
+    c.save()
+    assert open(s.CONFIG_PATH + ".bad").read() == ""
+    assert json.load(open(s.CONFIG_PATH))["x"] == 1
+
+
+def _web(rt, post):
+    saved = []
+    cfg = {"refresh_token": rt, "client_id": "c"}
+    cfg = type("C", (dict,), {"save": lambda self: saved.append(dict(self))})(cfg)
+    web = SimpleNamespace(cfg=cfg, access=None, expires=0.0, token_lock=threading.Lock(),
+                          _post_token=post, _set=lambda *a: None)
+    web._refresh_token = lambda: s.SpotifyWeb._refresh_token(web)
+    return web
+
+
+def test_parallel_token_refresh_keeps_the_rotated_token():
+    calls = []
+
+    def post(data):  # Spotify rotates: the old token works once
+        calls.append(data["refresh_token"])
+        time.sleep(0.05)
+        if data["refresh_token"] != "rt1":
+            raise urllib.error.HTTPError("u", 400, "invalid_grant", {}, None)
+        return {"access_token": "a", "expires_in": 3600, "refresh_token": "rt2"}
+    web = _web("rt1", post)
+    ths = [threading.Thread(target=s.SpotifyWeb._ensure_token, args=(web,)) for _ in range(3)]
+    for t in ths:
+        t.start()
+    for t in ths:
+        t.join()
+    assert calls == ["rt1"] and web.cfg["refresh_token"] == "rt2", (calls, web.cfg)
+
+
+def test_refused_token_is_not_deleted_if_a_newer_one_was_saved():
+    def post(data):  # a reconnect saves a new token while this refresh is in flight
+        web.cfg["refresh_token"] = "new"
+        raise urllib.error.HTTPError("u", 400, "invalid_grant", {}, None)
+    web = _web("old", post)
+    try:
+        s.SpotifyWeb._ensure_token(web)
+    except urllib.error.HTTPError:
+        pass
+    assert web.cfg["refresh_token"] == "new"
 
 
 def test_version_compare_and_installer_in_sync():

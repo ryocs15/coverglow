@@ -5,6 +5,7 @@ last_track.json
 last_art.img
 stats.json
 stats_import.json
+*.bad
 widget.log
 *.log
 

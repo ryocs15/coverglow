@@ -80,7 +80,18 @@ def save_json(path, data, **kw):
     tmp = path + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f, **kw)
+        f.flush()
+        os.fsync(f.fileno())  # data on disk before the swap: a power cut can't leave an empty file
     os.replace(tmp, path)
+
+
+def set_aside(path, e):
+    """An unreadable data file is renamed to .bad, not overwritten by the fresh defaults."""
+    log("could not read", os.path.basename(path), "- kept as .bad:", repr(e))
+    try:
+        os.replace(path, path + ".bad")
+    except OSError as e2:
+        log("could not set it aside:", repr(e2))
 
 
 # ------------------------------------------------------------------ layout
@@ -566,8 +577,10 @@ class Config(dict):
         try:
             with open(CONFIG_PATH, "r", encoding="utf-8") as f:
                 self.update(json.load(f))
-        except Exception:
-            pass
+        except FileNotFoundError:
+            pass  # first run
+        except Exception as e:  # noqa: BLE001
+            set_aside(CONFIG_PATH, e)
         enc = self.pop("refresh_token_enc", None)
         if enc:
             try:
@@ -1818,6 +1831,7 @@ class SpotifyWeb:
     def __init__(self, cfg):
         self.cfg = cfg
         self.lock = threading.Lock()
+        self.token_lock = threading.Lock()
         self.queue = None
         self.error = None
         self.version = 0
@@ -1867,14 +1881,21 @@ class SpotifyWeb:
         return json.loads(http_read(req, timeout=15).decode())
 
     def _ensure_token(self):
+        # one refresh at a time: Spotify rotates the refresh token, so a second parallel refresh
+        # with the old one gets 400 and would delete the new token
+        with self.token_lock:
+            self._refresh_token()
+
+    def _refresh_token(self):
         if self.access and time.time() < self.expires - 30:
             return
+        sent = self.cfg["refresh_token"]
         try:
-            r = self._post_token({"grant_type": "refresh_token",
-                                  "refresh_token": self.cfg["refresh_token"],
+            r = self._post_token({"grant_type": "refresh_token", "refresh_token": sent,
                                   "client_id": self.cfg["client_id"]})
         except urllib.error.HTTPError as e:
-            if e.code in (400, 401):
+            # delete only the token that was refused, not one a reconnect saved meanwhile
+            if e.code in (400, 401) and self.cfg.get("refresh_token") == sent:
                 self.cfg.pop("refresh_token", None)
                 self.cfg.save()
                 self._set(None, ("err_expired", {}))
@@ -3161,10 +3182,13 @@ class App:
         try:
             with open(STATS_PATH, "r", encoding="utf-8") as f:
                 s = json.load(f)
-            if isinstance(s.get("days"), dict):
-                return s
-        except Exception:  # noqa: BLE001
+            if not isinstance(s.get("days"), dict):
+                raise ValueError("no days")
+            return s
+        except FileNotFoundError:
             pass
+        except Exception as e:  # noqa: BLE001
+            set_aside(STATS_PATH, e)
         return {"days": {}}
 
     def _save_stats(self):
