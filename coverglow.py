@@ -799,6 +799,23 @@ def fullscreen_info(own=()):
         return None, f"hata {e!r}"
 
 
+def covered_by_foreground(rect, own=()):
+    """Is rect (screen px) fully behind the foreground window? Catches the common case (a big app
+    window over the widget); a partial overlap counts as visible."""
+    hwnd = user32.GetForegroundWindow()
+    if not hwnd or hwnd in own or user32.IsIconic(hwnd):
+        return False
+    cls = ctypes.create_unicode_buffer(64)
+    user32.GetClassNameW(hwnd, cls, 64)
+    if cls.value in _SHELL_CLASSES:
+        return False
+    rc = wintypes.RECT()  # visible frame, without the invisible resize border
+    if ctypes.windll.dwmapi.DwmGetWindowAttribute(hwnd, 9, ctypes.byref(rc), ctypes.sizeof(rc)):
+        return False  # DWMWA_EXTENDED_FRAME_BOUNDS failed
+    x0, y0, x1, y1 = rect
+    return rc.left <= x0 and rc.top <= y0 and rc.right >= x1 and rc.bottom >= y1
+
+
 def fullscreen_app(own=()):
     """Monitor rect if the foreground window is fullscreen (game, video, presentation); else None."""
     return fullscreen_info(own)[0]
@@ -2980,6 +2997,11 @@ class App:
             animating = True
         if self.marq is not None:
             animating = True
+        if animating and self.cfg["mode"] != "top" and not self.inside                 and self.drag_seek is None and not isinstance(self._morph, dict):
+            x, y = self._win_pos()
+            if covered_by_foreground((x, y, x + self.WP, y + round(self.content_h * self.S)),
+                                     (self.hwnd, self.toast.hwnd)):
+                animating = False  # nobody can see the wave: tick slowly instead of 60 fps
         # ~60 fps while animating: keep a steady interval by subtracting this frame's time
         frame_ms = FRAME_MS if self.cfg["fps"] >= 60 else 33
         if animating or self.drag_seek is not None:
