@@ -129,7 +129,7 @@ IC_CAL, IC_VOL, IC_MUTE, IC_ALARM = "\uE787", "\uE767", "\uE74F", "\uEA8F"
 REDIRECT_URI = "http://127.0.0.1:8888/callback"
 SCOPES = ("user-read-playback-state user-read-currently-playing "
           "user-library-read user-library-modify user-modify-playback-state")
-APP_VERSION = "1.2.1"  # keep in sync with AppVersion in Coverglow.iss (test_core checks it)
+APP_VERSION = "1.2.2"  # keep in sync with AppVersion in Coverglow.iss (test_core checks it)
 UA = f"Coverglow/{APP_VERSION} (+https://github.com/ryocs15/coverglow)"
 RELEASES_URL = "https://github.com/ryocs15/coverglow/releases/latest"
 
