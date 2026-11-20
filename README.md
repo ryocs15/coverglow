@@ -87,7 +87,7 @@ pip install -r requirements.txt
 python coverglow.py
 ```
 
-To start it without a console window, double-click `Start.vbs`.
+To start it without a console window, use `pythonw coverglow.py`.
 
 ## Build the exe
 

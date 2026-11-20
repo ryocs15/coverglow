@@ -129,7 +129,7 @@ IC_CAL, IC_VOL, IC_MUTE, IC_ALARM = "\uE787", "\uE767", "\uE74F", "\uEA8F"
 REDIRECT_URI = "http://127.0.0.1:8888/callback"
 SCOPES = ("user-read-playback-state user-read-currently-playing "
           "user-library-read user-library-modify user-modify-playback-state")
-APP_VERSION = "1.2.0"  # keep in sync with AppVersion in Coverglow.iss (test_core checks it)
+APP_VERSION = "1.2.1"  # keep in sync with AppVersion in Coverglow.iss (test_core checks it)
 UA = f"Coverglow/{APP_VERSION} (+https://github.com/ryocs15/coverglow)"
 RELEASES_URL = "https://github.com/ryocs15/coverglow/releases/latest"
 
@@ -2255,6 +2255,8 @@ class App:
         self._duck_fade = None
         self._alarm_day = None
         self._alarm_fade = None
+        # volume to put back if the app was killed while it had Spotify turned down
+        self._vol_pending = self.cfg.get("vol_restore")
         self.cfg.setdefault("stats_period", "7")
         self.cfg.setdefault("stats_list", "artists")
         self.stats = self._load_stats()
@@ -2650,6 +2652,7 @@ class App:
     def _restore_sleep_volume(self):
         if self.sleep_fade is not None:
             self.volume.set(self.sleep_fade)
+            self._vol_mark(None)
         self.sleep_fade = None
 
     def _finish_sleep(self):
@@ -2659,7 +2662,7 @@ class App:
         if self.st.get("ok") and self.st.get("playing"):
             self.media.command("pause")
         if fade is not None:  # after pausing, go back to the old volume
-            self.root.after(1500, lambda: self.volume.set(fade))
+            self.root.after(1500, lambda: (self.volume.set(fade), self._vol_mark(None)))
         self.base_key = None
 
     def _sleep_minutes(self):
@@ -2915,6 +2918,7 @@ class App:
             elif rem <= 20 and playing:
                 if self.sleep_fade is None:
                     self.sleep_fade = self.volume.get()
+                    self._vol_mark(self.sleep_fade)
                 if self.sleep_fade is not None:
                     self.volume.set(self.sleep_fade * rem / 20)
 
@@ -3192,10 +3196,6 @@ class App:
         return {"days": {}}
 
     def _save_stats(self):
-        days = self.stats["days"]
-        cutoff = (date.today() - timedelta(days=400)).isoformat()
-        for k in [k for k in days if k < cutoff]:
-            del days[k]
         try:
             save_json(STATS_PATH, self.stats, ensure_ascii=False)
         except Exception as e:  # noqa: BLE001
@@ -3224,7 +3224,7 @@ class App:
             tkey = f'{st["title"]}\t{artist}'
             tr = d.setdefault("tracks", {})
             tr[tkey] = tr.get(tkey, 0.0) + delta
-        if now - self._stat_saved > 30:
+        if now - self._stat_saved > 120:  # big file on the UI thread: not too often
             self._save_stats()
 
     def _index_imported(self):
@@ -3902,7 +3902,22 @@ class App:
                                     T("hk_next" if act == "next" else "hk_prev"), fs, hold=900)
 
     # ---------------- audio: react to music, duck for Discord
+    def _vol_mark(self, v):
+        """Remember the user's volume while Coverglow has turned Spotify down (None: back to normal),
+        so a forced close (installer, shutdown, crash) doesn't leave it low."""
+        if self.cfg.get("vol_restore") != v:
+            if v is None:
+                self.cfg.pop("vol_restore", None)
+            else:
+                self.cfg["vol_restore"] = v
+            self.cfg.save()
+
     def _audio_tick(self, now, st, playing):
+        if self._vol_pending is not None and st.get("ok") and self.volume.get() is not None:
+            log("restoring Spotify volume left low by the last run")
+            self.volume.set(self._vol_pending)
+            self._vol_pending = None
+            self._vol_mark(None)
         # wave reacting to music: Spotify's output level (0..1 with auto gain)
         if self.cfg["react"] and self.cfg["wave"] and playing and not self.mini:
             p = self.volume.peak(("spotify.exe",))
@@ -3940,6 +3955,7 @@ class App:
             self.volume.set(f["from"] + (f["to"] - f["from"]) * t)
             if t >= 1.0:
                 self._duck_fade = None
+                self._vol_mark(None)
         talking = self.volume.peak(tuple(self.cfg["duck_apps"])) > 0.015
         if talking:
             if self._duck is None and st.get("ok"):
@@ -3948,6 +3964,7 @@ class App:
                     self._duck_fade = None
                     self._duck = {"orig": v, "low": v * 0.3, "last": now}
                     self.volume.set(v * 0.3)
+                    self._vol_mark(v)
             elif self._duck:
                 self._duck["last"] = now
         elif self._duck and now - self._duck["last"] > 1.2:
@@ -3959,6 +3976,8 @@ class App:
         # if the user changed the volume meanwhile, leave it alone
         if cur is not None and abs(cur - d["low"]) < 0.03:
             self._duck_fade = {"from": cur, "to": d["orig"], "t0": time.monotonic()}
+        else:
+            self._vol_mark(None)
 
     # ---------------- alarm
     def _alarm_tick(self, st):
@@ -3987,6 +4006,7 @@ class App:
                     return
                 f["target"] = v if v > 0.1 else 0.6
                 self.volume.set(0.02)
+                self._vol_mark(f["target"])
                 if not st.get("playing"):
                     self.media.command("play")
                 f["t0"] = mono
@@ -3995,6 +4015,7 @@ class App:
         self.volume.set(0.02 + (f["target"] - 0.02) * t)
         if t >= 1.0:
             self._alarm_fade = None
+            self._vol_mark(None)
 
     def _vol_shown(self):
         if self.vol_val is not None and time.monotonic() < self.vol_until:
@@ -5083,8 +5104,10 @@ class App:
     def run(self):
         self.root.mainloop()
         self._save_stats()
-        if self._duck:  # restore ducked volume when closing
-            self.volume.set(self._duck["orig"])
+        v = self.cfg.get("vol_restore")
+        if v is not None and self.volume.get() is not None:  # ducked / fading: put it back
+            self.volume.set(v)
+            self._vol_mark(None)
 
 
 # ------------------------------------------------------------------ toast

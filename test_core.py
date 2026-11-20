@@ -122,9 +122,19 @@ def test_refused_token_is_not_deleted_if_a_newer_one_was_saved():
     assert web.cfg["refresh_token"] == "new"
 
 
+def test_volume_left_low_by_a_killed_run_is_restored():
+    vol = SimpleNamespace(v=0.02, get=lambda: vol.v, set=lambda x: setattr(vol, "v", x))
+    cfg = type("C", (dict,), {"save": lambda self: None})(vol_restore=0.7, react=False)
+    app = SimpleNamespace(cfg=cfg, volume=vol, _vol_pending=0.7, level=0.0, _lvl_lo=None,
+                          _duck=None, _duck_fade=None)
+    app._vol_mark = lambda v: s.App._vol_mark(app, v)
+    s.App._audio_tick(app, 0.0, {"ok": True}, False)
+    assert vol.v == 0.7 and "vol_restore" not in cfg and app._vol_pending is None
+
+
 def test_version_compare_and_installer_in_sync():
     assert s.version_tuple("v1.10.0") > s.version_tuple("1.9.3")
-    assert s.version_tuple("v1.2.0") == s.version_tuple(s.APP_VERSION)
+    assert s.version_tuple("v1.2.1") == s.version_tuple(s.APP_VERSION)
     iss = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "Coverglow.iss"),
                encoding="utf-8").read()
     assert f'#define AppVersion "{s.APP_VERSION}"' in iss, "bump AppVersion in Coverglow.iss"
