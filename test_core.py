@@ -203,9 +203,21 @@ def test_downloaded_update_must_match_the_listed_digest():
     assert os.listdir(os.path.join(d, "bad")) == []   # nothing left behind
 
 
+def test_cached_text_matches_direct_drawing():
+    from PIL import Image, ImageChops, ImageDraw
+    f = s.TextFont("segoeui.ttf", 13, 1.25)
+    for xy, anchor in (((10.3, 12.6), "la"), ((100.5, 30.2), "mm"), ((190.7, 50.4), "rs"),
+                       ((1, 1), "lm")):
+        a = Image.new("RGBA", (200, 60), (30, 32, 36, 255))
+        b = a.copy()
+        f.draw(ImageDraw.Draw(a), xy, "Şarkı İçin ğü", (240, 240, 240, 255), anchor)
+        f.paste(b, xy, "Şarkı İçin ğü", (240, 240, 240, 255), anchor)
+        assert ImageChops.difference(a, b).getbbox() is None, (xy, anchor)
+
+
 def test_version_compare_and_installer_in_sync():
     assert s.version_tuple("v1.10.0") > s.version_tuple("1.9.3")
-    assert s.version_tuple("v1.2.7") == s.version_tuple(s.APP_VERSION)
+    assert s.version_tuple("v1.2.8") == s.version_tuple(s.APP_VERSION)
     iss = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "Coverglow.iss"),
                encoding="utf-8").read()
     assert f'#define AppVersion "{s.APP_VERSION}"' in iss, "bump AppVersion in Coverglow.iss"

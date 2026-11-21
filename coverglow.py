@@ -146,7 +146,7 @@ IC_CAL, IC_VOL, IC_MUTE, IC_ALARM = "\uE787", "\uE767", "\uE74F", "\uEA8F"
 REDIRECT_URI = "http://127.0.0.1:8888/callback"
 SCOPES = ("user-read-playback-state user-read-currently-playing "
           "user-library-read user-library-modify user-modify-playback-state")
-APP_VERSION = "1.2.7"  # keep in sync with AppVersion in Coverglow.iss (test_core checks it)
+APP_VERSION = "1.2.8"  # keep in sync with AppVersion in Coverglow.iss (test_core checks it)
 UA = f"Coverglow/{APP_VERSION} (+https://github.com/ryocs15/coverglow)"
 
 
@@ -185,6 +185,11 @@ def download_update(upd, folder):
     """Download the installer to folder and check its size and SHA-256 (GitHub's asset digest).
     Returns the file path; raises ValueError if the file is not the one GitHub listed."""
     os.makedirs(folder, exist_ok=True)
+    for old in os.listdir(folder):   # earlier installers / broken downloads (~22 MB each)
+        try:
+            os.remove(os.path.join(folder, old))
+        except OSError:
+            pass
     path = os.path.join(folder, f"CoverglowSetup-{upd['tag']}.exe")
     h, n = hashlib.sha256(), 0
     req = urllib.request.Request(upd["url"], headers={"User-Agent": UA})
@@ -5443,6 +5448,8 @@ class App:
         scope = "/CURRENTUSER" if local and os.path.normcase(app_dir).startswith(local) \
             else "/ALLUSERS"   # an all-users install asks for admin rights (UAC) as it did before
         self.toast.show_message(MI["import"], T("upd_inst"), hold=60000)
+        self._save_stats()   # the installer stops this copy with taskkill /f: nothing is saved after
+        self.cfg.save()
         try:
             subprocess.Popen([path, "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-",
                               scope, f"/DIR={app_dir}", "/RELAUNCH=1"],
@@ -5451,7 +5458,9 @@ class App:
             log("update start:", repr(e))
             self._update_failed()
             return
-        self.root.after(800, self.root.destroy)  # quit cleanly (stats saved) before it replaces the exe
+        # no self-close: if the install never starts (UAC "No", error) the widget keeps running;
+        # after 2 min the menu item works again
+        self.root.after(120000, lambda: setattr(self, "_updating", False))
 
     def _set_startup(self, on):
         """Launch at Windows startup: HKCU\\...\\Run entry (shown in Task Manager > Startup)."""
