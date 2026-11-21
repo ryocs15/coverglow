@@ -19,12 +19,15 @@ Reply to the user in the language they write in (the maintainer writes in Turkis
   fallback fonts), `fit_text()`, `wrap_text()`, `fmt_dur()`, `fmt_time()`.
 - **Cache:** the main image is cached by the `base_key` tuple (`_render_all`). If you add new visual state,
   add it to `base_key`. The progress strip and the mini-mode scrolling title update partially via `region()`.
-- **Loop:** `App._tick` (40 ms while animating, else 200 ms). Drawing must stay cheap; cache expensive work.
+- **Loop:** `App._tick`: `frame_ms()` while animating (setting "Animation smoothness": ~64 or ~32 fps,
+  whole Windows timer ticks), paced from the previous due time by `next_due()`; 200 ms while playing,
+  450 ms idle, slow when the widget is fully covered. Drawing must stay cheap; cache expensive work.
 - **Data sources:** `MediaWorker` (GSMTC, asyncio thread: current track, cover, commands),
   `SpotifyWeb` (PKCE OAuth, queue, like, search, devices), `AppVolume` (pycaw: Spotify volume, peak
   meters), `Lyrics` (lrclib.net), `Hotkeys` (RegisterHotKey).
 - **UI parts:** `_render_base` / `_render_mini` / `_render_queue` (tabs: queue, recent, lyrics, stats),
-  `_render_stats`, `Toast` (track toast + short indicator via `show_message`), `MenuPanel` (right-click
+  `_render_stats`, `Toast` (track toast + short indicator via `show_message`; corner `cfg["toast_pos"]`, time
+  `cfg["toast_secs"]`, shown on the foreground window's monitor, hover keeps it, next button / click opens Spotify), `MenuPanel` (right-click
   menu: defined by dicts in `items()`; kinds: quick, nav, toggle, seg, swatch, radio, action, info, header,
   sep, title), `_Dialog`-based windows (`SearchDialog`, `AlarmDialog`, `RecapWindow`), `ConnectDialog`.
 - **Colors:** Material You palette from the album cover (`self.pal`). Keys: primary, on_primary,

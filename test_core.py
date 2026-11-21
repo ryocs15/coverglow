@@ -1,5 +1,6 @@
 """Small tests for the risky core logic. Run: python test_core.py (or pytest)."""
 import json
+import math
 import os
 import tempfile
 import threading
@@ -154,6 +155,24 @@ def test_accent_text_is_made_readable():
     assert (max(lc, lb) + .05) / (min(lc, lb) + .05) >= 4.5 and c != tx, c
     dark = s.hexc("#28342a")
     assert s.readable(dark, bg, tx) == dark   # already readable: unchanged
+
+
+def test_toast_goes_to_the_chosen_corner():
+    area = SimpleNamespace(left=1920, top=0, right=3840, bottom=1040)   # second monitor, taskbar 40
+    assert s.toast_xy(area, 300, 80, "br", 16) == (3524, 944)
+    assert s.toast_xy(area, 300, 80, "tl", 16) == (1936, 16)
+    assert s.toast_xy(area, 300, 80, "tr", 16) == (3524, 16)
+    assert s.toast_xy(area, 300, 80, "bl", 16) == (1936, 944)
+
+
+def test_frame_pacing_keeps_the_chosen_rate_despite_late_timers():
+    due = 0.0
+    for i in range(1, 301):   # Windows wakes up on a 15.6 ms grid, never early
+        woke = math.ceil(due / 0.015625) * 0.015625
+        due = s.next_due(due, woke, 1000 / 30)
+    assert abs(due - 10.0) < 0.05, due            # 300 frames at 30 fps = 10 s, not ~14 s
+    assert s.next_due(1.0, 5.0, 1000 / 60) == 5.0  # far behind (sleep): no catch-up burst
+    assert abs(s.ease(0.3, 32) - (1 - 0.7 ** 2)) < 1e-9   # one 30 fps frame = two 60 fps frames
 
 
 def test_version_compare_and_installer_in_sync():

@@ -60,7 +60,24 @@ CONFIG_PATH = os.path.join(APP_DIR, "config.json")
 LAST_PATH = os.path.join(APP_DIR, "last_track.json")
 LAST_ART_PATH = os.path.join(APP_DIR, "last_art.img")
 STATS_PATH = os.path.join(APP_DIR, "stats.json")
-FRAME_MS = 16  # animation frame interval (~60 fps)
+# animation frame interval at the "smooth" setting (~64 fps; saver: 2x). Whole Windows timer
+# ticks (15.625 ms): with 1000 / 60 the planned frames drift against the wake-ups and ~7 frames
+# a second wait a whole extra tick (a visible hitch)
+FRAME_MS = 1000 / 64
+
+
+def next_due(due, now, interval):
+    """Wake-up time (s) of the next tick. Windows timers wake up to ~15.6 ms late, so counting
+    from the previous due time (not from now) keeps the average at 1000 / interval per second;
+    counting from now turned 33 ms into ~46 ms (30 fps into ~22 fps)."""
+    nxt = due + interval / 1000
+    return nxt if nxt >= now else now   # fell behind (slow frame, sleep): no catch-up burst
+
+
+def ease(speed, ms):
+    """Per-frame step of an exponential approach tuned at 16 ms, for a frame of ms: the same
+    duration at 30 or 60 fps."""
+    return 1 - (1 - speed) ** (ms / 16)
 LOG_PATH = os.path.join(APP_DIR, "widget.log")
 FONT_DIR = os.path.join(os.environ.get("WINDIR", r"C:\Windows"), "Fonts")
 
@@ -193,6 +210,8 @@ STRINGS = {
         "weekdays": "Pazartesi Salı Çarşamba Perşembe Cuma Cumartesi Pazar",
         "m_react": "Müziğe tepki veren dalga", "m_duck": "Discord'da konuşulunca Spotify'ı kıs",
         "m_osd": "Kısayolda ekran göstergesi",
+        "m_tpos": "Bildirim yeri", "m_tsecs": "Bildirim süresi", "m_tprev": "Bildirimi önizle",
+        "sec": "sn",
         "osd_play": "Çalıyor", "osd_pause": "Duraklatıldı", "osd_vol": "Ses",
         "m_search": "Şarkı ara…  (Ctrl+Alt+S)", "hk_search": "Şarkı ara",
         "hk_like": "Beğen / beğeniyi kaldır", "osd_liked": "Beğenildi",
@@ -324,6 +343,9 @@ STRINGS = {
         "weekdays": "Monday Tuesday Wednesday Thursday Friday Saturday Sunday",
         "m_react": "Wave reacts to music", "m_duck": "Lower Spotify when someone talks on Discord",
         "m_osd": "On-screen display for shortcuts",
+        "m_tpos": "Notification position", "m_tsecs": "Notification time",
+        "m_tprev": "Preview notification",
+        "sec": "s",
         "osd_play": "Playing", "osd_pause": "Paused", "osd_vol": "Volume",
         "m_search": "Search songs…  (Ctrl+Alt+S)", "hk_search": "Search songs",
         "hk_like": "Like / unlike", "osd_liked": "Liked", "osd_unliked": "Removed from Liked",
@@ -754,10 +776,31 @@ class MONITORINFO(ctypes.Structure):
 
 
 user32.GetForegroundWindow.restype = wintypes.HWND
+user32.WindowFromPoint.argtypes = [wintypes.POINT]
+user32.WindowFromPoint.restype = wintypes.HWND
 user32.MonitorFromWindow.restype = ctypes.c_void_p
 user32.MonitorFromWindow.argtypes = [wintypes.HWND, wintypes.DWORD]
 user32.GetMonitorInfoW.argtypes = [ctypes.c_void_p, ctypes.POINTER(MONITORINFO)]
 _SHELL_CLASSES = {"Progman", "WorkerW", "Shell_TrayWnd", "Shell_SecondaryTrayWnd"}
+
+
+def window_class(hwnd):
+    """Window class name ('' for no window); desktop / taskbar are in _SHELL_CLASSES."""
+    cls = ctypes.create_unicode_buffer(64)
+    if hwnd:
+        user32.GetClassNameW(hwnd, cls, 64)
+    return cls.value
+
+
+def own_window_at_cursor():
+    """Root window under the mouse if it belongs to this app (widget, menu, toast), else None."""
+    pt, pid = wintypes.POINT(), wintypes.DWORD()
+    user32.GetCursorPos(ctypes.byref(pt))
+    h = user32.WindowFromPoint(pt)
+    if not h:
+        return None
+    user32.GetWindowThreadProcessId(h, ctypes.byref(pid))
+    return user32.GetAncestor(h, 2) if pid.value == os.getpid() else None
 
 
 def monitor_info(hwnd):
@@ -776,11 +819,9 @@ def fullscreen_info(own=()):
         state = ctypes.c_int(0)
         ctypes.windll.shell32.SHQueryUserNotificationState(ctypes.byref(state))
         hwnd = user32.GetForegroundWindow()
-        cls = ctypes.create_unicode_buffer(64)
-        if hwnd:
-            user32.GetClassNameW(hwnd, cls, 64)
-        desc = f"on={cls.value or '-'} durum={state.value}"
-        if not hwnd or hwnd in own or cls.value in _SHELL_CLASSES:
+        cls = window_class(hwnd)
+        desc = f"on={cls or '-'} durum={state.value}"
+        if not hwnd or hwnd in own or cls in _SHELL_CLASSES:
             # we / the desktop are in front; if Windows still says fullscreen use the primary monitor
             if state.value in (3, 4):
                 return monitor_info(user32.GetDesktopWindow()).rcMonitor, desc + " (sistem)"
@@ -805,17 +846,20 @@ def covered_by_foreground(rect, own=()):
     """Is rect (screen px) fully behind the foreground window? Catches the common case (a big app
     window over the widget); a partial overlap counts as visible."""
     hwnd = user32.GetForegroundWindow()
-    if not hwnd or hwnd in own or user32.IsIconic(hwnd):
-        return False
-    cls = ctypes.create_unicode_buffer(64)
-    user32.GetClassNameW(hwnd, cls, 64)
-    if cls.value in _SHELL_CLASSES:
+    if not hwnd or hwnd in own or user32.IsIconic(hwnd) or window_class(hwnd) in _SHELL_CLASSES:
         return False
     rc = wintypes.RECT()  # visible frame, without the invisible resize border
     if ctypes.windll.dwmapi.DwmGetWindowAttribute(hwnd, 9, ctypes.byref(rc), ctypes.sizeof(rc)):
         return False  # DWMWA_EXTENDED_FRAME_BOUNDS failed
     x0, y0, x1, y1 = rect
     return rc.left <= x0 and rc.top <= y0 and rc.right >= x1 and rc.bottom >= y1
+
+
+def toast_xy(area, w, h, corner, m):
+    """Top-left of a w x h toast in a corner ('br', 'tr', 'bl', 'tl') of area (RECT), m from the edges."""
+    x = area.left + m if corner[1] == "l" else area.right - w - m
+    y = area.top + m if corner[0] == "t" else area.bottom - h - m
+    return x, y
 
 
 def fullscreen_app(own=()):
@@ -2388,6 +2432,8 @@ class App:
         self.cfg.setdefault("mini", False)
         self.cfg.setdefault("hotkeys", True)
         self.cfg.setdefault("notify", True)
+        self.cfg.setdefault("toast_pos", "br")    # corner: br / tr / bl / tl
+        self.cfg.setdefault("toast_secs", 3.5)
         self.cfg.setdefault("list_tab", "queue")
         self.cfg.setdefault("accent", "auto")
         self.cfg.setdefault("bg", "solid")
@@ -2708,6 +2754,12 @@ class App:
             # short delay so it doesn't flicker when crossing the gap between cards
             self._leave_job = self.root.after(250, self._left)
 
+    def toast_area(self):
+        """Work area of the monitor the user is on (foreground window), else the widget's."""
+        fg = user32.GetForegroundWindow()
+        own = fg in (self.hwnd, self.toast.hwnd) or window_class(fg) in _SHELL_CLASSES
+        return monitor_info(self.hwnd if not fg or own else fg).rcWork
+
     def _left(self):
         self._leave_job = None
         self.inside = False
@@ -2720,15 +2772,15 @@ class App:
         target, cur = self._target_alpha(), self.surface.alpha
         if cur == target:
             return
-        speed = 0.35 if target > cur else 0.18  # appears fast, fades slowly
-        nxt = cur + (target - cur) * speed
+        ms = self.frame_ms()
+        nxt = cur + (target - cur) * ease(0.35 if target > cur else 0.18, ms)  # in fast, out slowly
         nxt = target if abs(target - nxt) < 2 else round(nxt)
         if nxt == cur:
             nxt = target
         self.surface.alpha = nxt
         self.surface._commit(None)
         if nxt != target:
-            self._alpha_job = self.root.after(16, self._alpha_step)
+            self._alpha_job = self.root.after(round(ms), self._alpha_step)
 
     def _open_entity(self, kind):
         """Open the artist / album page in Spotify."""
@@ -2987,8 +3039,13 @@ class App:
         try:
             interval = self._tick_body()
         finally:  # keep the loop running even if a frame fails (error goes to report_callback_exception)
-            work = (time.monotonic() - t0) * 1000
-            self.root.after(max(1, int(interval - work)), self._tick)
+            now = time.monotonic()
+            self._due = next_due(getattr(self, "_due", t0), now, interval)
+            self.root.after(max(1, round((self._due - now) * 1000)), self._tick)
+
+    def frame_ms(self):
+        """Animation frame interval from the 'Animation smoothness' setting (60 or 30 fps)."""
+        return FRAME_MS if self.cfg["fps"] >= 60 else 2 * FRAME_MS
 
     def _tick_body(self):
         now = time.monotonic()
@@ -3018,9 +3075,6 @@ class App:
         self._stat_tick(now, st, playing)
         if st.get("ok") and self.cfg["list_tab"] == "lyrics" and self.cfg["show_queue"]:
             self.lyrics.request(st.get("title"), st.get("artist"), st.get("album"), st.get("end"))
-        self._audio_tick(now, st, playing)
-        self._alarm_tick(st)
-        self._memory_tick(now, st, playing)
         if st.get("ok") and not self.pending:  # refresh for the tracks in between while skipping
             self.web.notify((st["title"], st["artist"]), playing)
             if st.get("title") and (st.get("art_changed") or self.last is None
@@ -3045,12 +3099,18 @@ class App:
                     self._toast_key = key
                     fs, why = fullscreen_info((self.hwnd, self.toast.hwnd))
                     show = self.cfg["notify"] and (fs is not None or (
-                        self.cfg["mode"] == "desktop" and not self.inside))
+                        self.cfg["mode"] == "desktop"
+                        and own_window_at_cursor() in (None, self.toast.hwnd)))
                     if fs is not None or self.cfg.get("debug_toast"):
                         # short diagnostic line to find out why it's hidden in games
                         log(f"bildirim: tam_ekran={fs is not None} gosterildi={bool(show)} {why}")
                     if show:
                         self.toast.show(st, fs)
+        # after the track change handling: an error in these (e.g. pycaw while the audio device
+        # changes) would otherwise lose the toast and the history entry of the new track
+        self._audio_tick(now, st, playing)
+        self._alarm_tick(st)
+        self._memory_tick(now, st, playing)
 
         # hotkeys
         while self.hk_queue:
@@ -3081,15 +3141,11 @@ class App:
                 if self.sleep_fade is not None:
                     self.volume.set(self.sleep_fade * rem / 20)
 
-        # safety net: if the <Leave> event is missed, notice it from the cursor position
+        # safety net: if the <Leave> event is missed (e.g. another window came over the widget
+        # under a still cursor), notice it from the window under the cursor
         if self.inside and self._leave_job is None and self.drag_seek is None \
-                and not self.win_drag:
-            pt, rc = wintypes.POINT(), wintypes.RECT()
-            user32.GetCursorPos(ctypes.byref(pt))
-            user32.GetWindowRect(self.hwnd, ctypes.byref(rc))
-            cw, ch = self.WP, round(self.content_h * self.S)  # visible part
-            if not (rc.left <= pt.x < rc.left + cw and rc.top <= pt.y < rc.top + ch):
-                self._set_inside(False)
+                and not self.win_drag and own_window_at_cursor() is None:
+            self._set_inside(False)
 
         if now - self.last_theme_check > 5:
             self.last_theme_check = now
@@ -3144,10 +3200,8 @@ class App:
             if covered_by_foreground((x, y, x + self.WP, y + round(self.content_h * self.S)),
                                      (self.hwnd, self.toast.hwnd)):
                 animating = False  # nobody can see the wave: tick slowly instead of 60 fps
-        # ~60 fps while animating: keep a steady interval by subtracting this frame's time
-        frame_ms = FRAME_MS if self.cfg["fps"] >= 60 else 33
-        if animating or self.drag_seek is not None:
-            interval = frame_ms
+        if animating or self.drag_seek is not None:  # 60 or 30 fps, from the setting
+            interval = self.frame_ms()
         elif playing or self.inside or self._alarm_fade or self._duck or self._duck_fade \
                 or self.sleep_end is not None:
             interval = 200   # keep time / progress current
@@ -3575,7 +3629,7 @@ class App:
         img.paste(top, (0, 0), mask.point(lambda v: int(v * 0.85)))
         d = Drawer(img)
         on, var, pri = P["on_surface"] + (255,), P["on_surface_variant"] + (255,), \
-            P["primary"] + (255,)
+            readable(P["primary"], P["surface"], P["on_surface"]) + (255,)
         x0 = 28
         d.text((X(x0), X(34)), T("wr_title", y=year).upper(), font=f["cap"], fill=pri,
                anchor="lm")
@@ -3684,7 +3738,7 @@ class App:
         d.text((X(Wd / 2), X(y + 4)), fit_text(st.get("artist") or "", fa, X(Wd - 60)), font=fa,
                fill=P["on_surface_variant"] + (255,), anchor="mm")
         d.text((X(Wd / 2), X(Hd - 26)), "♫  " + T("playing"), font=fc,
-               fill=P["primary"] + (255,), anchor="mm")
+               fill=readable(P["primary"], P["surface"], P["on_surface"]) + (255,), anchor="mm")
         out = img.convert("RGB")
         copy_image_to_clipboard(out)
         try:
@@ -4744,7 +4798,8 @@ class App:
                 continue
             tile(tx, ty, tx + tw, ty + 52, 16)
             d.text((X(tx + 12), X(ty + 19)), fit_text(val, F["qhead"], X(tw - 20)),
-                   font=F["qhead"], fill=(P["primary"] if i == 0 else P["on_surface"]) + (255,),
+                   font=F["qhead"], fill=(readable(P["primary"], P["surface"], P["on_surface"])
+                                          if i == 0 else P["on_surface"]) + (255,),
                    anchor="lm")
             d.text((X(tx + 12), X(ty + 37)), fit_text(lbl, F["qsub"], X(tw - 20)),
                    font=F["qsub"], fill=P["on_surface_variant"] + (255,), anchor="lm")
@@ -4772,7 +4827,8 @@ class App:
                    alpha=255 if (hl or over) else 130)
             if lbl:
                 d.text((X(cx), X(by1 + 13)), lbl, font=F["qsub"],
-                       fill=(P["primary"] if (hl or over) else P["on_surface_variant"]) + (255,),
+                       fill=(readable(P["primary"], P["surface"], P["on_surface"]) if (hl or over)
+                             else P["on_surface_variant"]) + (255,),
                        anchor="mm")
             if target is not None:
                 hits.append((hid, cx - cw / 2, by0 - 6, cx + cw / 2, by1 + 22))
@@ -5320,7 +5376,8 @@ class Toast:
         self._hold_until = 0.0
         self.hold = self.HOLD_MS
         self.surface.full(Image.new("RGBA", (self.WM, self.HM), (0, 0, 0, 0)))
-        t.bind("<Button-1>", lambda _e: self._clicked())
+        t.bind("<Button-1>", self._clicked)
+        self._track = False       # showing the track toast (has the next button)
         self.on_click = None
         self._job = None
         self._target = 0
@@ -5342,7 +5399,9 @@ class Toast:
             rr(img, X(12), X(12), X(76), X(76), X(16), P["surface_highest"])
             d.text((X(44), X(44)), IC_MUSIC, font=app.icon_font(26),
                    fill=P["on_surface_variant"] + (255,), anchor="mm")
-        tw = X(self.TW - 88 - 18)
+        tw = X(self.TW - 88 - 48)   # room for the next button
+        d.text((X(self.TW - 30), X(self.TH / 2)), IC_NEXT, font=app.icon_font(17),
+               fill=P["on_surface_variant"] + (255,), anchor="mm")
         d.text((X(88), X(24)), T("playing"), font=F["status"],
                fill=readable(P["primary"], P["surface"], P["on_surface"]) + (255,), anchor="lm")
         d.text((X(88), X(45)), fit_text(st.get("title") or T("unknown"), F["mtitle"], tw),
@@ -5354,13 +5413,27 @@ class Toast:
     def show(self, st, fs=None):
         """fs: monitor of the fullscreen app (if any the toast appears on it, top right,
         and passes clicks through to the game)."""
-        self._present(self._render(st), self.TW, self.TH, fs, self.HOLD_MS)
+        try:
+            secs = min(60.0, max(1.0, float(self.app.cfg.get("toast_secs", 3.5))))
+        except (TypeError, ValueError):
+            secs = self.HOLD_MS / 1000
+        self._present(self._render(st), self.TW, self.TH, fs, round(1000 * secs))
+        self._track = True
 
-    def _clicked(self):
+    def _clicked(self, e=None):
+        """Track toast: the next button skips (toast stays briefly), elsewhere opens Spotify.
+        Messages: their own on_click, if any."""
         fn, self.on_click = self.on_click, None
+        if self._track and e is not None and e.x / self.app.S >= self.TW - 56:
+            self.app.media.command("next")
+            self._hold_until = time.monotonic() + 0.6
+            return
+        if self._track and fn is None:
+            fn = open_spotify
         self.hide()
         if fn:
             fn()
+
 
     def show_message(self, icon, text, fs=None, value=None, hold=1400, on_click=None, sub=None):
         """Short on-screen indicator (hotkeys, alarm, copied): icon + text
@@ -5378,7 +5451,8 @@ class Toast:
                anchor="mm")
         if sub is not None:  # two lines: small heading + main text
             d.text((X(64), X(21)), fit_text(text, F["status"], X(w - 80)), font=F["status"],
-                   fill=P["primary"] + (255,), anchor="lm")
+                   fill=readable(P["primary"], P["surface_high"], P["on_surface"]) + (255,),
+                   anchor="lm")
             d.text((X(64), X(40)), fit_text(sub, F["mtitle"], X(w - 80)), font=F["mtitle"],
                    fill=P["on_surface"] + (255,), anchor="lm")
         elif value is None:
@@ -5388,7 +5462,8 @@ class Toast:
             d.text((X(64), X(22)), text, font=F["btn"], fill=P["on_surface"] + (255,),
                    anchor="lm")
             d.text((X(w - 20), X(22)), f"%{round(value * 100)}", font=F["btn"],
-                   fill=P["primary"] + (255,), anchor="rm")
+                   fill=readable(P["primary"], P["surface_high"], P["on_surface"]) + (255,),
+                   anchor="rm")
             rr(img, X(64), X(36), X(w - 20), X(41), X(2.5), P["on_surface"], alpha=30)
             if value > 0:
                 rr(img, X(64), X(36), X(64 + (w - 84) * value), X(41), X(2.5), P["primary"])
@@ -5398,6 +5473,7 @@ class Toast:
     def _present(self, img, w, h, fs, hold):
         S = self.app.S
         self.hold = hold
+        self._track = False
         self._z_logged = False
         self.on_click = None
         self.fs = fs is not None
@@ -5406,13 +5482,14 @@ class Toast:
         user32.SetWindowLongPtrW(self.hwnd, GWL_EXSTYLE, ex)
         self.surface.full(img)
         m = round(16 * S)
-        if fs is not None:
+        corner = self.app.cfg.get("toast_pos")
+        corner = corner if corner in ("br", "tr", "bl", "tl") else "br"
+        if fs is not None:  # games: top right, away from the usual bottom HUD
+            corner = "tr"
             self._pos = (fs.right - round(w * S) - m, fs.top + m + round(8 * S))
-        else:
-            rc = wintypes.RECT()
-            user32.SystemParametersInfoW(0x30, 0, ctypes.byref(rc), 0)  # SPI_GETWORKAREA
-            self._pos = (rc.right - round(w * S) - m, rc.bottom - round(h * S) - m)
-        self._offset = 14 * S  # slides up from below
+        else:  # the monitor the user is working on
+            self._pos = toast_xy(self.app.toast_area(), round(w * S), round(h * S), corner, m)
+        self._offset = (14 if corner[0] == "b" else -14) * S  # slides in from the near edge
         user32.SetWindowPos(self.hwnd, HWND_TOPMOST, self._pos[0],
                             self._pos[1] + int(self._offset), 0, 0,
                             SWP_NOSIZE | SWP_NOACTIVATE)
@@ -5431,19 +5508,19 @@ class Toast:
     def _step(self):
         self._job = None
         cur, target = self.surface.alpha, self._target
-        speed = 0.3 if target > cur else 0.2
-        nxt = cur + (target - cur) * speed
+        ms = self.app.frame_ms()
+        nxt = cur + (target - cur) * ease(0.3 if target > cur else 0.2, ms)
         nxt = target if abs(target - nxt) < 3 else round(nxt)
         self.surface.alpha = nxt
         if target > 0:
-            self._offset *= 0.7
+            self._offset *= 1 - ease(0.3, ms)
             # re-raise to the top every step (games can bring themselves to front)
             user32.SetWindowPos(self.hwnd, HWND_TOPMOST, self._pos[0],
                                 self._pos[1] + int(self._offset), 0, 0,
                                 SWP_NOSIZE | SWP_NOACTIVATE)
         self.surface._commit(None)
         if nxt != target:
-            self._job = self.top.after(16, self._step)
+            self._job = self.top.after(round(ms), self._step)
         elif target > 0:  # wait (staying on top), then disappear
             self._hold_until = time.monotonic() + self.hold / 1000
             self._job = self.top.after(250, self._hold)
@@ -5452,6 +5529,8 @@ class Toast:
 
     def _hold(self):
         self._job = None
+        if not self.fs and own_window_at_cursor() == self.hwnd:  # hovered: stay, and a moment after
+            self._hold_until = max(self._hold_until, time.monotonic() + 1.2)
         if time.monotonic() >= self._hold_until:
             self.hide()
             return
@@ -5803,6 +5882,17 @@ class MenuPanel:
             out += [
                 {"t": "toggle", "id": "t_notify", "label": T("m_notify"), "on": c["notify"],
                  "set": lambda v: app._set("notify", v)},
+                {"t": "seg", "id": "s_tpos", "label": T("m_tpos"), "value": c["toast_pos"],
+                 "options": [("br", "↘"), ("tr", "↗"), ("bl", "↙"), ("tl", "↖")],
+                 "set": lambda v: app._set("toast_pos", v), "disabled": not c["notify"]},
+                {"t": "seg", "id": "s_tsec", "label": T("m_tsecs"), "value": c["toast_secs"],
+                 "options": [(v, f"{v:g} {T('sec')}".replace(".", "," if LANG == "tr" else "."))
+                             for v in (2, 3.5, 6, 10)],
+                 "set": lambda v: app._set("toast_secs", v), "disabled": not c["notify"]},
+                {"t": "action", "id": "a_tprev", "icon": MI["notif"], "label": T("m_tprev"),
+                 "disabled": not c["notify"],
+                 "do": lambda: app.toast.show(app.st if app.st.get("title") else
+                                              {"title": "Coverglow", "artist": APP_VERSION})},
                 {"t": "toggle", "id": "t_osd", "label": T("m_osd"), "on": c["osd"],
                  "set": lambda v: app._set("osd", v)},
                 {"t": "toggle", "id": "t_mem", "label": T("m_memory"), "on": c["memory"],
@@ -6081,7 +6171,7 @@ class MenuPanel:
                                  (lambda s=it["set"], v=val: s(v))))
             y += h
         if animate and not getattr(self, "_slide_job", None):
-            self._slide_job = self.top.after(16, self._slide_frame)
+            self._slide_job = self.top.after(round(app.frame_ms()), self._slide_frame)
 
         # place in the window: shadow + card + content
         pos = self._place(vh, place)
