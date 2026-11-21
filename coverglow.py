@@ -146,7 +146,7 @@ IC_CAL, IC_VOL, IC_MUTE, IC_ALARM = "\uE787", "\uE767", "\uE74F", "\uEA8F"
 REDIRECT_URI = "http://127.0.0.1:8888/callback"
 SCOPES = ("user-read-playback-state user-read-currently-playing "
           "user-library-read user-library-modify user-modify-playback-state")
-APP_VERSION = "1.2.8"  # keep in sync with AppVersion in Coverglow.iss (test_core checks it)
+APP_VERSION = "1.2.9"  # keep in sync with AppVersion in Coverglow.iss (test_core checks it)
 UA = f"Coverglow/{APP_VERSION} (+https://github.com/ryocs15/coverglow)"
 
 
@@ -5396,9 +5396,12 @@ class App:
             return False
 
     def _recheck_update(self):
-        """Look for a new release now and every 6 hours (a widget runs for days)."""
+        """Look for a new release now and every 6 hours (a widget runs for days). Background
+        timer, no Tk: this runs in __init__ before the window (self.root) exists."""
         threading.Thread(target=self._check_update, daemon=True).start()
-        self.root.after(6 * 3600 * 1000, self._recheck_update)
+        t = threading.Timer(6 * 3600, self._recheck_update)
+        t.daemon = True
+        t.start()
 
     def _check_update(self):
         try:

@@ -215,9 +215,18 @@ def test_cached_text_matches_direct_drawing():
         assert ImageChops.difference(a, b).getbbox() is None, (xy, anchor)
 
 
+def test_update_check_starts_before_the_window_exists():
+    seen = []
+    app = SimpleNamespace(_check_update=lambda: seen.append(1),   # no .root yet, as in __init__
+                          _recheck_update=lambda: None)
+    s.App._recheck_update(app)   # 1.2.7 / 1.2.8 crashed here at startup
+    time.sleep(0.2)
+    assert seen == [1]
+
+
 def test_version_compare_and_installer_in_sync():
     assert s.version_tuple("v1.10.0") > s.version_tuple("1.9.3")
-    assert s.version_tuple("v1.2.8") == s.version_tuple(s.APP_VERSION)
+    assert s.version_tuple("v1.2.9") == s.version_tuple(s.APP_VERSION)
     iss = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "Coverglow.iss"),
                encoding="utf-8").read()
     assert f'#define AppVersion "{s.APP_VERSION}"' in iss, "bump AppVersion in Coverglow.iss"
