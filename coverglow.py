@@ -146,9 +146,8 @@ IC_CAL, IC_VOL, IC_MUTE, IC_ALARM = "\uE787", "\uE767", "\uE74F", "\uEA8F"
 REDIRECT_URI = "http://127.0.0.1:8888/callback"
 SCOPES = ("user-read-playback-state user-read-currently-playing "
           "user-library-read user-library-modify user-modify-playback-state")
-APP_VERSION = "1.2.6"  # keep in sync with AppVersion in Coverglow.iss (test_core checks it)
+APP_VERSION = "1.2.7"  # keep in sync with AppVersion in Coverglow.iss (test_core checks it)
 UA = f"Coverglow/{APP_VERSION} (+https://github.com/ryocs15/coverglow)"
-RELEASES_URL = "https://github.com/ryocs15/coverglow/releases/latest"
 
 
 def version_tuple(v):
@@ -156,13 +155,49 @@ def version_tuple(v):
     return tuple(int(x) for x in v.strip().lstrip("vV").split(".") if x.isdigit())
 
 
+UPDATE_PREFIX = "https://github.com/ryocs15/coverglow/releases/download/"
+
+
+def pick_update(release):
+    """From a GitHub 'latest release' answer: {tag, url, size, sha256} of CoverglowSetup.exe if
+    the release is newer than this build and the file really comes from this repo, else None."""
+    tag = release.get("tag_name") or ""
+    if version_tuple(tag) <= version_tuple(APP_VERSION):
+        return None
+    for a in release.get("assets") or []:
+        url = a.get("browser_download_url") or ""
+        if a.get("name") == "CoverglowSetup.exe" and url.startswith(UPDATE_PREFIX):
+            digest = a.get("digest") or ""
+            return {"tag": tag, "url": url, "size": int(a.get("size") or 0),
+                    "sha256": digest[7:].lower() if digest.startswith("sha256:") else None}
+    return None
+
+
 def latest_release():
-    """Tag of the newest GitHub release if it is newer than this build, else None."""
+    """The newer release's installer (see pick_update), else None."""
     req = urllib.request.Request(
         "https://api.github.com/repos/ryocs15/coverglow/releases/latest",
         headers={"User-Agent": UA, "Accept": "application/vnd.github+json"})
-    tag = json.loads(http_read(req, timeout=10)).get("tag_name", "")
-    return tag if version_tuple(tag) > version_tuple(APP_VERSION) else None
+    return pick_update(json.loads(http_read(req, timeout=10)))
+
+
+def download_update(upd, folder):
+    """Download the installer to folder and check its size and SHA-256 (GitHub's asset digest).
+    Returns the file path; raises ValueError if the file is not the one GitHub listed."""
+    os.makedirs(folder, exist_ok=True)
+    path = os.path.join(folder, f"CoverglowSetup-{upd['tag']}.exe")
+    h, n = hashlib.sha256(), 0
+    req = urllib.request.Request(upd["url"], headers={"User-Agent": UA})
+    with urllib.request.urlopen(req, timeout=30) as r, open(path + ".part", "wb") as f:
+        while chunk := r.read(1 << 16):
+            h.update(chunk)
+            n += len(chunk)
+            f.write(chunk)
+    if (upd["size"] and n != upd["size"]) or (upd["sha256"] and h.hexdigest() != upd["sha256"]):
+        os.remove(path + ".part")
+        raise ValueError(f"download check failed: {n} bytes")
+    os.replace(path + ".part", path)
+    return path
 
 
 # ------------------------------------------------------------------ language
@@ -284,7 +319,9 @@ STRINGS = {
         "m_showlist": "Sıradaki / son çalınanlar kartını göster",
         "m_notify": "Şarkı değişince bildirim göster",
         "m_connect": "Spotify hesabını bağla…", "m_disconnect": "Spotify bağlantısını kaldır",
-        "m_open": "Spotify'ı aç", "m_startup": "Windows açılışında başlat", "m_close": "Kapat", "upd_new": "Yeni sürüm var: {v}",
+        "m_open": "Spotify'ı aç", "m_startup": "Windows açılışında başlat", "m_close": "Kapat", "upd_new": "Güncelle: {v}",
+        "upd_dl": "Güncelleme indiriliyor…", "upd_inst": "Güncelleme kuruluyor…",
+        "upd_fail": "Güncelleme indirilemedi", "upd_src": "Kaynak koddan çalışıyor: git pull ile güncelle",
         # bağlantı penceresi
         "dlg_title": "Spotify Hesabını Bağla", "dlg_head": "Spotify hesabını bağla",
         "dlg_steps": ("Sıradaki listesi ve Beğen butonu Spotify Web API ile çalışır. "
@@ -417,7 +454,9 @@ STRINGS = {
         "m_showlist": "Show Up next / Recent card",
         "m_notify": "Notify on song change",
         "m_connect": "Connect Spotify account…", "m_disconnect": "Disconnect Spotify",
-        "m_open": "Open Spotify", "m_startup": "Start with Windows", "m_close": "Close", "upd_new": "New version available: {v}",
+        "m_open": "Open Spotify", "m_startup": "Start with Windows", "m_close": "Close", "upd_new": "Update to {v}",
+        "upd_dl": "Downloading the update…", "upd_inst": "Installing the update…",
+        "upd_fail": "Could not download the update", "upd_src": "Running from source: update with git pull",
         "dlg_title": "Connect Spotify Account", "dlg_head": "Connect your Spotify account",
         "dlg_steps": ("Up next and the Like button use the Spotify Web API. "
                       "One-time setup:\n\n"
@@ -2481,8 +2520,10 @@ class App:
             self._set_startup(True)
         self._start_t = time.monotonic()
         self.update_tag = None    # newer release tag, shown in the menu
+        self.update = None        # its installer (pick_update)
+        self._updating = False
         if FROZEN:  # dev / test copies stay offline
-            threading.Thread(target=self._check_update, daemon=True).start()
+            self._recheck_update()
         self.cfg.setdefault("react", True)
         self.cfg.setdefault("duck", True)
         self.cfg.setdefault("osd", True)
@@ -5349,11 +5390,68 @@ class App:
         except OSError:
             return False
 
+    def _recheck_update(self):
+        """Look for a new release now and every 6 hours (a widget runs for days)."""
+        threading.Thread(target=self._check_update, daemon=True).start()
+        self.root.after(6 * 3600 * 1000, self._recheck_update)
+
     def _check_update(self):
         try:
-            self.update_tag = latest_release()
+            self.update = latest_release()
+            self.update_tag = self.update["tag"] if self.update else None
         except Exception as e:  # noqa: BLE001 - offline or rate limited: just skip
             log("update check:", repr(e))
+
+    def _install_update(self):
+        """Download the new installer and run it silently over this install; it closes this
+        copy, installs into the same folder and starts the new version. No browser."""
+        if self._updating or not self.update:
+            return
+        if not FROZEN:
+            self.toast.show_message(MI["open"], T("upd_src"), hold=3000)
+            return
+        self._updating = True
+        self.toast.show_message(MI["import"], T("upd_dl"), hold=60000)
+        upd, res = self.update, {}
+
+        def work():   # no Tk calls here: the Tk thread picks up res
+            try:
+                res["path"] = download_update(upd, os.path.join(
+                    os.environ.get("TEMP") or os.path.dirname(sys.executable), "Coverglow-update"))
+            except Exception as e:  # noqa: BLE001
+                log("update download:", repr(e))
+                res["err"] = e
+
+        def wait():
+            if "path" in res:
+                self._run_installer(res["path"])
+            elif "err" in res:
+                self._update_failed()
+            else:
+                self.root.after(200, wait)
+        threading.Thread(target=work, daemon=True).start()
+        wait()
+
+    def _update_failed(self):
+        self._updating = False
+        self.toast.show_message(MI["close"], T("upd_fail"), hold=3000)
+
+    def _run_installer(self, path):
+        import subprocess
+        app_dir = os.path.dirname(sys.executable)
+        local = os.path.normcase(os.environ.get("LOCALAPPDATA", ""))
+        scope = "/CURRENTUSER" if local and os.path.normcase(app_dir).startswith(local) \
+            else "/ALLUSERS"   # an all-users install asks for admin rights (UAC) as it did before
+        self.toast.show_message(MI["import"], T("upd_inst"), hold=60000)
+        try:
+            subprocess.Popen([path, "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-",
+                              scope, f"/DIR={app_dir}", "/RELAUNCH=1"],
+                             creationflags=0x00000008)  # DETACHED_PROCESS: outlives this copy
+        except OSError as e:
+            log("update start:", repr(e))
+            self._update_failed()
+            return
+        self.root.after(800, self.root.destroy)  # quit cleanly (stats saved) before it replaces the exe
 
     def _set_startup(self, on):
         """Launch at Windows startup: HKCU\\...\\Run entry (shown in Task Manager > Startup)."""
@@ -5850,9 +5948,9 @@ class MenuPanel:
                 {"t": "nav", "id": "p_lang", "icon": MI["lang"], "label": T("mn_language"),
                  "value": "Türkçe" if LANG == "tr" else "English", "page": "lang"},
                 {"t": "sep"},
-            ] + ([{"t": "action", "id": "a_upd", "icon": MI["open"],
+            ] + ([{"t": "action", "id": "a_upd", "icon": MI["import"],
                    "label": T("upd_new", v=app.update_tag),
-                   "do": self._then_close(lambda: webbrowser.open(RELEASES_URL))}]
+                   "do": self._then_close(app._install_update)}]
                  if app.update_tag else []) + [
                 {"t": "action", "id": "a_close", "icon": MI["close"], "label": T("m_close"),
                  "value": f"v{APP_VERSION}", "do": self._then_close(app.root.destroy)}]

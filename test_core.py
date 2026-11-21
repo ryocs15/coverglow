@@ -175,9 +175,37 @@ def test_frame_pacing_keeps_the_chosen_rate_despite_late_timers():
     assert abs(s.ease(0.3, 32) - (1 - 0.7 ** 2)) < 1e-9   # one 30 fps frame = two 60 fps frames
 
 
+def test_update_takes_only_a_newer_installer_from_this_repo():
+    good = {"name": "CoverglowSetup.exe", "size": 3, "digest": "sha256:ABC",
+            "browser_download_url": s.UPDATE_PREFIX + "v99.0.0/CoverglowSetup.exe"}
+    u = s.pick_update({"tag_name": "v99.0.0", "assets": [good]})
+    assert u == {"tag": "v99.0.0", "url": good["browser_download_url"], "size": 3, "sha256": "abc"}
+    assert s.pick_update({"tag_name": "v" + s.APP_VERSION, "assets": [good]}) is None  # not newer
+    evil = dict(good, browser_download_url="https://example.com/CoverglowSetup.exe")
+    assert s.pick_update({"tag_name": "v99.0.0", "assets": [evil]}) is None   # other host
+
+
+def test_downloaded_update_must_match_the_listed_digest():
+    import hashlib
+    from pathlib import Path
+    d = tempfile.mkdtemp()
+    src = os.path.join(d, "src.exe")
+    open(src, "wb").write(b"installer")
+    sha = hashlib.sha256(b"installer").hexdigest()
+    upd = {"tag": "v99.0.0", "url": Path(src).as_uri(), "size": 9, "sha256": sha}
+    path = s.download_update(upd, os.path.join(d, "out"))
+    assert open(path, "rb").read() == b"installer"
+    try:
+        s.download_update(dict(upd, sha256="0" * 64), os.path.join(d, "bad"))
+        raise AssertionError("a file with the wrong digest was accepted")
+    except ValueError:
+        pass
+    assert os.listdir(os.path.join(d, "bad")) == []   # nothing left behind
+
+
 def test_version_compare_and_installer_in_sync():
     assert s.version_tuple("v1.10.0") > s.version_tuple("1.9.3")
-    assert s.version_tuple("v1.2.6") == s.version_tuple(s.APP_VERSION)
+    assert s.version_tuple("v1.2.7") == s.version_tuple(s.APP_VERSION)
     iss = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "Coverglow.iss"),
                encoding="utf-8").read()
     assert f'#define AppVersion "{s.APP_VERSION}"' in iss, "bump AppVersion in Coverglow.iss"

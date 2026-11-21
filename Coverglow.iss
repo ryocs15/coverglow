@@ -2,7 +2,7 @@
 ;   ISCC Coverglow.iss  ->  dist\CoverglowSetup.exe
 ; Settings and stats live in %APPDATA%\Coverglow, not in the install folder.
 
-#define AppVersion "1.2.6"
+#define AppVersion "1.2.7"
 
 [Setup]
 AppId={{52846197-9AA4-4AF0-962C-FC389C3B927B}
@@ -45,8 +45,15 @@ Name: "{autodesktop}\Coverglow"; Filename: "{app}\Coverglow.exe"; Tasks: desktop
 
 [Run]
 Filename: "{app}\Coverglow.exe"; Description: "{cm:LaunchProgram,Coverglow}"; Flags: nowait postinstall skipifsilent
+; in-app update (silent, /RELAUNCH=1): start the new version, as the user, not as admin
+Filename: "{app}\Coverglow.exe"; Flags: nowait runasoriginaluser; Check: Relaunch
 
 [Code]
+function Relaunch: Boolean;
+begin
+  Result := WizardSilent and (ExpandConstant('{param:RELAUNCH|0}') = '1');
+end;
+
 // the widget has no window to close, so stop a running copy before files are replaced or removed
 procedure KillApp;
 var R: Integer;
