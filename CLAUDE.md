@@ -27,7 +27,7 @@ Reply to the user in the language they write in (the maintainer writes in Turkis
   meters), `Lyrics` (lrclib.net), `Hotkeys` (RegisterHotKey).
 - **Updates:** `latest_release()` → `pick_update()` (newer tag, CoverglowSetup.exe from this repo only);
   menu "Update to …" → `App._install_update`: `download_update()` checks size + GitHub's SHA-256, then runs
-  the installer silently (`/VERYSILENT /DIR=<exe folder> /RELAUNCH=1`); `Coverglow.iss` restarts the app.
+  the installer silently (`installer_args()`: `/VERYSILENT /DIR=<exe folder> /RELAUNCH=1`, scope from the folder); `Coverglow.iss` restarts the app.
 - **UI parts:** `_render_base` / `_render_mini` / `_render_queue` (tabs: queue, recent, lyrics, stats),
   `_render_stats`, `Toast` (track toast + short indicator via `show_message`; corner `cfg["toast_pos"]`, time
   `cfg["toast_secs"]`, shown on the foreground window's monitor, hover keeps it, next button / click opens Spotify), `MenuPanel` (right-click

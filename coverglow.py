@@ -181,6 +181,15 @@ def latest_release():
     return pick_update(json.loads(http_read(req, timeout=10)))
 
 
+def installer_args(path, app_dir, local_appdata):
+    """Silent install over this copy: same folder, same scope (per-user installs live under
+    %LOCALAPPDATA%; anything else is an all-users install and asks for admin rights as before)."""
+    local = os.path.normcase(local_appdata or "")
+    scope = "/CURRENTUSER" if local and os.path.normcase(app_dir).startswith(local) else "/ALLUSERS"
+    return [path, "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-", scope,
+            f"/DIR={app_dir}", "/RELAUNCH=1"]
+
+
 def download_update(upd, folder):
     """Download the installer to folder and check its size and SHA-256 (GitHub's asset digest).
     Returns the file path; raises ValueError if the file is not the one GitHub listed."""
@@ -5446,16 +5455,12 @@ class App:
 
     def _run_installer(self, path):
         import subprocess
-        app_dir = os.path.dirname(sys.executable)
-        local = os.path.normcase(os.environ.get("LOCALAPPDATA", ""))
-        scope = "/CURRENTUSER" if local and os.path.normcase(app_dir).startswith(local) \
-            else "/ALLUSERS"   # an all-users install asks for admin rights (UAC) as it did before
         self.toast.show_message(MI["import"], T("upd_inst"), hold=60000)
         self._save_stats()   # the installer stops this copy with taskkill /f: nothing is saved after
         self.cfg.save()
         try:
-            subprocess.Popen([path, "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-",
-                              scope, f"/DIR={app_dir}", "/RELAUNCH=1"],
+            subprocess.Popen(installer_args(path, os.path.dirname(sys.executable),
+                                            os.environ.get("LOCALAPPDATA")),
                              creationflags=0x00000008)  # DETACHED_PROCESS: outlives this copy
         except OSError as e:
             log("update start:", repr(e))

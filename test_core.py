@@ -224,6 +224,18 @@ def test_update_check_starts_before_the_window_exists():
     assert seen == [1]
 
 
+def test_silent_install_keeps_the_folder_and_scope():
+    local = r"C:\Users\Ada\AppData\Local"
+    mine = r"c:\users\ada\appdata\local\Programs\Coverglow"   # other letter case than LOCALAPPDATA
+    per_user = s.installer_args("setup.exe", mine, local)
+    assert "/CURRENTUSER" in per_user and "/DIR=" + mine in per_user
+    shared = r"C:\Program Files\Coverglow"
+    all_users = s.installer_args("setup.exe", shared, local)
+    assert "/ALLUSERS" in all_users and "/DIR=" + shared in all_users
+    assert all_users[0] == "setup.exe" and "/VERYSILENT" in all_users and "/RELAUNCH=1" in all_users
+    assert "/ALLUSERS" in s.installer_args("setup.exe", r"C:\Coverglow", None)   # no LOCALAPPDATA
+
+
 def test_version_compare_and_installer_in_sync():
     assert s.version_tuple("v1.10.0") > s.version_tuple("1.9.3")
     assert s.version_tuple("v1.2.9") == s.version_tuple(s.APP_VERSION)
