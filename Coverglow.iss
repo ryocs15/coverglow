@@ -2,7 +2,7 @@
 ;   ISCC Coverglow.iss  ->  dist\CoverglowSetup.exe
 ; Settings and stats live in %APPDATA%\Coverglow, not in the install folder.
 
-#define AppVersion "1.2.2"
+#define AppVersion "1.2.5"
 
 [Setup]
 AppId={{52846197-9AA4-4AF0-962C-FC389C3B927B}
