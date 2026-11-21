@@ -177,7 +177,7 @@ def test_frame_pacing_keeps_the_chosen_rate_despite_late_timers():
 
 def test_version_compare_and_installer_in_sync():
     assert s.version_tuple("v1.10.0") > s.version_tuple("1.9.3")
-    assert s.version_tuple("v1.2.5") == s.version_tuple(s.APP_VERSION)
+    assert s.version_tuple("v1.2.6") == s.version_tuple(s.APP_VERSION)
     iss = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "Coverglow.iss"),
                encoding="utf-8").read()
     assert f'#define AppVersion "{s.APP_VERSION}"' in iss, "bump AppVersion in Coverglow.iss"
