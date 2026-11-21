@@ -1605,6 +1605,8 @@ class TextFont:
         self.asc, self.desc = self.primary.getmetrics()
         self._fb = {}
         self._runs = {}
+        self._len = {}      # text -> width
+        self._layers = {}   # (text, fill, sub-pixel x, y) -> rendered text layer
 
     def _fallback(self, i):
         f = self._fb.get(i)
@@ -1656,7 +1658,35 @@ class TextFont:
         return r
 
     def getlength(self, text):
-        return sum(f.getlength(seg) for f, seg, _e in self.runs(text))
+        w = self._len.get(text)
+        if w is None:
+            if len(self._len) > 2000:
+                self._len.clear()
+            w = self._len[text] = sum(f.getlength(seg) for f, seg, _e in self.runs(text))
+        return w
+
+    def paste(self, img, xy, text, fill, anchor="la"):
+        """Same as draw() on an RGBA image, from a cached layer: the text is rendered once per
+        (text, colour, anchor) instead of every frame. The layer is filled with the text colour at
+        alpha 0, so compositing it gives the same edges as drawing on the image."""
+        fill = tuple(fill) if isinstance(fill, (tuple, list)) else fill
+        ln = self.getlength(text)
+        px = xy[0] - {"m": ln / 2, "r": ln}.get(anchor[0], 0)   # top left of the text box
+        py = xy[1] - {"a": 0, "m": (self.asc + self.desc) / 2}.get(anchor[1], self.asc)
+        ix, iy = math.floor(px), math.floor(py)
+        fx, fy = round(px - ix, 1), round(py - iy, 1)  # keep the sub-pixel position, like draw()
+        key = (text, fill, fx, fy)
+        layer = self._layers.get(key)
+        pad = self.size // 2 + 2   # room for accents / overhang outside the metrics
+        if layer is None:
+            rgb = fill[:3] if isinstance(fill, tuple) else (0, 0, 0)
+            layer = Image.new("RGBA", (math.ceil(ln) + 2 * pad + 1,
+                                       self.asc + self.desc + 2 * pad + 1), tuple(rgb) + (0,))
+            self.draw(ImageDraw.Draw(layer), (pad + fx, pad + fy), text, fill, "la")
+            if len(self._layers) > 150:
+                self._layers.clear()
+            self._layers[key] = layer
+        img.alpha_composite(layer, (ix - pad, iy - pad))
 
     def draw(self, d, xy, text, fill, anchor="la"):
         x, y = xy
@@ -1679,10 +1709,14 @@ class Drawer:
     """ImageDraw wrapper: draws TextFont text with fallback fonts."""
 
     def __init__(self, img):
+        self.img = img
         self.d = ImageDraw.Draw(img)
 
     def text(self, xy, text, font=None, fill=None, anchor="la"):
-        if isinstance(font, TextFont):
+        if isinstance(font, TextFont) and self.img.mode == "RGBA" and fill is not None \
+                and 0 <= xy[0] < self.img.width and 0 <= xy[1] < self.img.height:
+            font.paste(self.img, xy, text, fill, anchor)
+        elif isinstance(font, TextFont):
             font.draw(self.d, xy, text, fill, anchor)
         else:
             self.d.text(xy, text, font=font, fill=fill, anchor=anchor)
@@ -2780,7 +2814,9 @@ class App:
         self.surface.alpha = nxt
         self.surface._commit(None)
         if nxt != target:
-            self._alpha_job = self.root.after(round(ms), self._alpha_step)
+            self._alpha_due = next_due(getattr(self, "_alpha_due", 0.0), time.monotonic(), ms)
+            self._alpha_job = self.root.after(
+                max(1, round((self._alpha_due - time.monotonic()) * 1000)), self._alpha_step)
 
     def _open_entity(self, kind):
         """Open the artist / album page in Spotify."""
@@ -5520,7 +5556,9 @@ class Toast:
                                 SWP_NOSIZE | SWP_NOACTIVATE)
         self.surface._commit(None)
         if nxt != target:
-            self._job = self.top.after(round(ms), self._step)
+            self._due = next_due(getattr(self, "_due", 0.0), time.monotonic(), ms)
+            self._job = self.top.after(max(1, round((self._due - time.monotonic()) * 1000)),
+                                       self._step)
         elif target > 0:  # wait (staying on top), then disappear
             self._hold_until = time.monotonic() + self.hold / 1000
             self._job = self.top.after(250, self._hold)
@@ -6171,7 +6209,10 @@ class MenuPanel:
                                  (lambda s=it["set"], v=val: s(v))))
             y += h
         if animate and not getattr(self, "_slide_job", None):
-            self._slide_job = self.top.after(round(app.frame_ms()), self._slide_frame)
+            self._slide_due = next_due(getattr(self, "_slide_due", 0.0), time.monotonic(),
+                                       app.frame_ms())
+            self._slide_job = self.top.after(
+                max(1, round((self._slide_due - time.monotonic()) * 1000)), self._slide_frame)
 
         # place in the window: shadow + card + content
         pos = self._place(vh, place)

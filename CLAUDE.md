@@ -16,7 +16,7 @@ Reply to the user in the language they write in (the maintainer writes in Turkis
 - **Coordinates** are logical px; physical = value × `self.S` (dpi × scale). The code uses the
   `X = lambda v: v * S` pattern.
 - **Helpers:** `rr()` rounded rectangle, `rounded_image()`, `Drawer` + `TextFont` (Japanese/Korean/emoji
-  fallback fonts), `fit_text()`, `wrap_text()`, `fmt_dur()`, `fmt_time()`.
+  fallback fonts; `Drawer.text` on RGBA pastes a cached text layer, `TextFont.paste`), `fit_text()`, `wrap_text()`, `fmt_dur()`, `fmt_time()`.
 - **Cache:** the main image is cached by the `base_key` tuple (`_render_all`). If you add new visual state,
   add it to `base_key`. The progress strip and the mini-mode scrolling title update partially via `region()`.
 - **Loop:** `App._tick`: `frame_ms()` while animating (setting "Animation smoothness": ~64 or ~32 fps,
