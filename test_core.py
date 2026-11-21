@@ -132,6 +132,30 @@ def test_volume_left_low_by_a_killed_run_is_restored():
     assert vol.v == 0.7 and "vol_restore" not in cfg and app._vol_pending is None
 
 
+def test_neumorphic_theme_follows_the_cover():
+    assert s.pick_neu((0.58, 0.6), True) == "buz"      # blue cover, light
+    assert s.pick_neu((0.78, 0.6), False) == "erik"    # purple cover, dark
+    assert s.pick_neu((0.1, 0.05), True) == "" and s.pick_neu((0.1, 0.05), False) == "grafit"
+    p = s.build_neu(True, (0.58, 0.6))
+    assert p["surface"] == (0xe4, 0xeb, 0xf2) and p["hi"] == (0xfb, 0xfd, 0xff), p
+
+
+def test_shadcn_from_cover_uses_the_nearest_shadcn_theme():
+    assert s.pick_shadcn((0.6, 0.65)) == "blue" and s.pick_shadcn((0.0, 0.7)) == "red"
+    assert s.pick_shadcn((0.3, 0.05)) is None   # grey cover: plain zinc
+    p = s.build_shadcn(False, theme="blue")
+    assert p["primary"] == s.oklch(0.424, 0.199, 265.638), p["primary"]
+
+
+def test_accent_text_is_made_readable():
+    bg, tx = s.hexc("#e9eaec"), s.hexc("#4a4d55")
+    c = s.readable(s.hexc("#8fb996"), bg, tx)   # RYOCS green on its light card: 1.8:1 as is
+    lc, lb = s._lum(c), s._lum(bg)
+    assert (max(lc, lb) + .05) / (min(lc, lb) + .05) >= 4.5 and c != tx, c
+    dark = s.hexc("#28342a")
+    assert s.readable(dark, bg, tx) == dark   # already readable: unchanged
+
+
 def test_version_compare_and_installer_in_sync():
     assert s.version_tuple("v1.10.0") > s.version_tuple("1.9.3")
     assert s.version_tuple("v1.2.2") == s.version_tuple(s.APP_VERSION)

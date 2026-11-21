@@ -35,10 +35,17 @@ Reply to the user in the language they write in (the maintainer writes in Turkis
   Geist from `fonts/` (OFL, github.com/vercel/geist-font) instead of Segoe. shadcn colors come from
   `SHADCN_ZINC` (github.com/shadcn-ui/ui `apps/v4/registry/themes.ts`, OKLCH) → `build_shadcn()`.
   The shadcn palette also has a `border` key (defined in the Material palette too).
-  `neu` (Neumorphic): fixed slate palette `NEU` → `build_neu()` (cover / accent colors unused, color
-  picker hidden). Card is `_neu_card` (NEU_GRAD diagonal gradient; also in glass / translucent mode).
-  Buttons are `neu_btn()` (soft UI: card colored, light shadow top left + dark bottom right; `rr()` draws
-  big circles this way automatically, `plain=True` skips it). The `neu_raise()` shadow is clipped to
+  "From cover" in shadcn picks the nearest colour theme of the same themes.ts (`SHADCN_THEMES`,
+  `pick_shadcn()`); grey covers stay zinc. On glass / translucent cards (`STYLE["see"]`) shadcn
+  prev / next get a border + 60% fill. In glass mode the menu background is `_card(glass=...)` with the
+  wallpaper behind the menu (`App._glass_at`).
+  `neu` (Neumorphic): the RYOCS themes `NEU_THEMES` (kisisel_panel ui.html TEMALAR); `pick_neu()` takes the
+  one whose accent hue is nearest to the cover → `build_neu()` (accent picker hidden; Poppins Light / Medium
+  from `fonts/` like RYOCS). Shadow colours / glass state live in `STYLE` (hi, lo, glass, clear).
+  Card is `_neu_card` (flat; glass in light mode = RYOCS glass look with `neu_glass()` sheen).
+  Buttons are `neu_btn()` (raised by `_neu_shadows()`, `pressed=True` sinks in with `neu_inset()`; on glass /
+  translucent cards the body shows the card through; `rr()` draws big circles this way, `plain=True`
+  skips it). Menu segments slide like RYOCS (`MenuPanel._slide_pos`). The `neu_raise()` shadow is clipped to
   img's opaque pixels, so it never spills outside the card. `PillButton` is raised in neu too.
 - **Language:** `STRINGS["tr"]` and `STRINGS["en"]`. Add every new string to both, use it via `T("key")`.
   Code comments, logs and docs are in English.

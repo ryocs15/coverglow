@@ -148,11 +148,12 @@ python test_core.py
 ## Credits
 
 - [Geist](https://github.com/vercel/geist-font) font by Vercel (SIL Open Font License, see `fonts/Geist-OFL.txt`).
+- [Poppins](https://github.com/itfoundry/Poppins) font by the Poppins Project Authors (SIL Open Font License, see `fonts/Poppins-OFL.txt`).
 - Lyrics by [LRCLIB](https://lrclib.net).
 - shadcn/ui colors from [shadcn-ui/ui](https://github.com/shadcn-ui/ui).
 
 ## License
 
-MIT, see [LICENSE](LICENSE). The Geist fonts keep their own OFL license.
+MIT, see [LICENSE](LICENSE). The Geist and Poppins fonts keep their own OFL license.
 
 This is an unofficial project and is not affiliated with Spotify.

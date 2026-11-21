@@ -251,6 +251,7 @@ STRINGS = {
         "m_top": "Her zaman üstte", "m_lock": "Konumu kilitle", "m_theme": "Tema",
         "th_system": "Sistem", "th_dark": "Koyu", "th_light": "Açık",
         "m_opacity": "Opaklık", "m_size": "Boyut",
+        "mh_custom": "Kişiselleştir", "mh_play": "Çalma", "mh_app": "Uygulama",
         "size_s": "Küçük", "size_m": "Orta", "size_n": "Normal", "size_l": "Büyük",
         "size_hint": "İnce ayar: widget üstünde Ctrl + tekerlek",
         "m_rows": "Listedeki şarkı sayısı", "rows_n": "{n} şarkı",
@@ -380,6 +381,7 @@ STRINGS = {
         "m_top": "Always on top", "m_lock": "Lock position", "m_theme": "Theme",
         "th_system": "System", "th_dark": "Dark", "th_light": "Light",
         "m_opacity": "Opacity", "m_size": "Size",
+        "mh_custom": "Personalize", "mh_play": "Playback", "mh_app": "App",
         "size_s": "Small", "size_m": "Medium", "size_n": "Normal", "size_l": "Large",
         "size_hint": "Fine-tune: Ctrl + mouse wheel on the widget",
         "m_rows": "Songs in list", "rows_n": "{n} songs",
@@ -1148,11 +1150,44 @@ SHADCN_ZINC = {
              "strong": (0.37, 0.013, 285.805)},   # chart-4: track / empty bar tone
 }
 SHADCN_RADIUS = 10  # --radius: 0.625rem
+# shadcn/ui v4 colour themes (same themes.ts): name: (light primary, light primary-foreground,
+# dark primary, dark primary-foreground), OKLCH. "From cover" picks the one nearest to the cover.
+SHADCN_THEMES = {
+    "amber": ((0.555, 0.163, 48.998), (0.987, 0.022, 95.277), (0.473, 0.137, 46.201), (0.987, 0.022, 95.277)),
+    "blue": ((0.488, 0.243, 264.376), (0.97, 0.014, 254.604), (0.424, 0.199, 265.638), (0.97, 0.014, 254.604)),
+    "cyan": ((0.52, 0.105, 223.128), (0.984, 0.019, 200.873), (0.45, 0.085, 224.283), (0.984, 0.019, 200.873)),
+    "emerald": ((0.508, 0.118, 165.612), (0.979, 0.021, 166.113), (0.432, 0.095, 166.913), (0.979, 0.021, 166.113)),
+    "fuchsia": ((0.518, 0.253, 323.949), (0.977, 0.017, 320.058), (0.452, 0.211, 324.591), (0.977, 0.017, 320.058)),
+    "green": ((0.527, 0.154, 150.069), (0.982, 0.018, 155.826), (0.448, 0.119, 151.328), (0.982, 0.018, 155.826)),
+    "indigo": ((0.457, 0.24, 277.023), (0.962, 0.018, 272.314), (0.398, 0.195, 277.366), (0.962, 0.018, 272.314)),
+    "lime": ((0.841, 0.238, 128.85), (0.405, 0.101, 131.063), (0.768, 0.233, 130.85), (0.405, 0.101, 131.063)),
+    "orange": ((0.553, 0.195, 38.402), (0.98, 0.016, 73.684), (0.47, 0.157, 37.304), (0.98, 0.016, 73.684)),
+    "pink": ((0.525, 0.223, 3.958), (0.971, 0.014, 343.198), (0.459, 0.187, 3.815), (0.971, 0.014, 343.198)),
+    "purple": ((0.496, 0.265, 301.924), (0.977, 0.014, 308.299), (0.438, 0.218, 303.724), (0.977, 0.014, 308.299)),
+    "red": ((0.505, 0.213, 27.518), (0.971, 0.013, 17.38), (0.444, 0.177, 26.899), (0.971, 0.013, 17.38)),
+    "rose": ((0.514, 0.222, 16.935), (0.969, 0.015, 12.422), (0.455, 0.188, 13.697), (0.969, 0.015, 12.422)),
+    "sky": ((0.5, 0.134, 242.749), (0.977, 0.013, 236.62), (0.443, 0.11, 240.79), (0.977, 0.013, 236.62)),
+    "teal": ((0.511, 0.096, 186.391), (0.984, 0.014, 180.72), (0.437, 0.078, 188.216), (0.984, 0.014, 180.72)),
+    "violet": ((0.491, 0.27, 292.581), (0.969, 0.016, 293.756), (0.432, 0.232, 292.759), (0.969, 0.016, 293.756)),
+    "yellow": ((0.852, 0.199, 91.936), (0.421, 0.095, 57.708), (0.795, 0.184, 86.047), (0.421, 0.095, 57.708)),
+}
 
 
-def build_shadcn(light, accent=None):
-    """shadcn/ui 'zinc' theme (neutral). If accent (hue, saturation) is given it becomes the primary
-    color (like shadcn's colored themes), otherwise black/white."""
+def pick_shadcn(seed):
+    """shadcn colour theme for a cover colour (hue, saturation); None (plain zinc) for grey covers."""
+    h, sat = seed
+    if sat < 0.15:
+        return None
+
+    def dist(n):
+        hh = colorsys.rgb_to_hls(*(c / 255 for c in oklch(*SHADCN_THEMES[n][0])))[0]
+        return min(abs(hh - h), 1 - abs(hh - h))
+    return min(SHADCN_THEMES, key=dist)
+
+
+def build_shadcn(light, accent=None, theme=None):
+    """shadcn/ui 'zinc' theme (neutral). theme: a SHADCN_THEMES colour theme; else if accent
+    (hue, saturation) is given it becomes the primary color, otherwise black/white."""
     t = {k: oklch(*v) for k, v in SHADCN_ZINC["light" if light else "dark"].items()}
     if not light:  # dark theme border: white 10% (on top of the card background)
         t["border"] = mix(t["card"], (255, 255, 255), 0.10)
@@ -1167,36 +1202,93 @@ def build_shadcn(light, accent=None):
         p["primary"] = tuple(round(c * 255) for c in colorsys.hls_to_rgb(
             h, 0.62 if not light else 0.48, min(0.85, max(0.55, s))))
         p["on_primary"] = (255, 255, 255) if light else hexc("#09090b")
+    if theme in SHADCN_THEMES:
+        pl, fl, pd, fd = SHADCN_THEMES[theme]
+        p["primary"], p["on_primary"] = oklch(*(pl if light else pd)), oklch(*(fl if light else fd))
     return p
 
 
-# Neumorphic (soft UI): fixed palette. Light: pastel-gradient off-white; dark: charcoal.
-# Buttons are card colored, depth comes from two soft shadows. Accent: soft green.
-NEU = {
-    "dark": {"surface": "#2b2d31", "surface_high": "#2b2d31", "surface_highest": "#232528",
-             "secondary_container": "#2e3035", "on_secondary_container": "#e6e7e9",
-             "primary_container": "#34413a", "on_primary_container": "#e6efe8",
-             "primary": "#8cc79c", "on_primary": "#1d2a21", "on_surface": "#e6e7e9",
-             "on_surface_variant": "#9ea3a8", "outline": "#6c7176", "border": "#3a3d42"},
-    "light": {"surface": "#f1f3f4", "surface_high": "#f1f3f4", "surface_highest": "#e4e8eb",
-              "secondary_container": "#f4f6f7", "on_secondary_container": "#3a3f44",
-              "primary_container": "#e1eee5", "on_primary_container": "#2f4a37",
-              "primary": "#6aa77d", "on_primary": "#ffffff", "on_surface": "#3a3f44",
-              "on_surface_variant": "#7d848a", "outline": "#a3a9ae", "border": "#dde1e4"},
+# Neumorphic (soft UI): the themes of RYOCS (kisisel_panel ui.html TEMALAR, without High contrast):
+# name: (dark, [background, light shadow, dark shadow, text, muted text, line, accent], glass bg).
+# The theme whose accent hue is nearest to the album cover is used; grey covers get the base theme
+# (dark: Graphite).
+NEU_THEMES = {
+    "": (False, ["#e9eaec", "#ffffff", "#c5c7cc", "#4a4d55", "#65686f", "#dcdde1", "#8fb996"], "#e9ecf1"),
+    "kum": (False, ["#ece6dc", "#fffaf2", "#cfc6b6", "#4d463c", "#6d6355", "#ddd5c7", "#c98b55"], "#ebe4d8"),
+    "buz": (False, ["#e4ebf2", "#fbfdff", "#c3ccd8", "#3f4a57", "#5d6978", "#d3dce6", "#5f95c9"], "#e3eaf3"),
+    "adacayi": (False, ["#e3e9e2", "#fafdf9", "#c3cdc2", "#3f4a40", "#5d695d", "#d3dbd2", "#5e9468"], "#e2e9e1"),
+    "lavanta": (False, ["#e8e5ef", "#fdfcff", "#c9c4d6", "#49445a", "#686279", "#dad6e4", "#9a85c9"], "#e7e3ef"),
+    "gul": (False, ["#efe4e4", "#fffafa", "#d2c3c3", "#574547", "#736062", "#e1d3d3", "#c27b88"], "#eee2e3"),
+    "nane": (False, ["#e2eeea", "#fafffd", "#c1d2cc", "#38494a", "#576a68", "#d0e0da", "#3f9d8a"], "#e1ede9"),
+    "seftali": (False, ["#f1e6df", "#fffaf6", "#d6c5ba", "#54453c", "#725f53", "#e4d5cb", "#e08e6d"], "#f0e4dc"),
+    "dark": (True, ["#2a2d32", "#363a41", "#1c1e22", "#d9dbe0", "#959aa3", "#3a3e45", "#8fb996"], None),
+    "gece": (True, ["#252b38", "#2f3646", "#1a1f29", "#d8deea", "#9aa4b8", "#343c4d", "#7fb0e6"], None),
+    "orman": (True, ["#232a26", "#2c3530", "#19201c", "#d6e0d9", "#96a59c", "#313b35", "#8fb996"], None),
+    "kahve": (True, ["#2d2723", "#38302b", "#211c19", "#e6dcd3", "#ab9c8f", "#3d342e", "#d08c5e"], None),
+    "grafit": (True, ["#1c1d20", "#25272b", "#121315", "#e4e5e8", "#9a9da5", "#2a2c31", "#d6d8dd"], None),
+    "okyanus": (True, ["#1f2b31", "#29373e", "#151e22", "#d5e3e8", "#93a9b1", "#2c3a41", "#5cc0c7"], None),
+    "erik": (True, ["#2b2330", "#362c3c", "#1e1822", "#e6dbe9", "#ab9cb1", "#3a3040", "#c58fd6"], None),
 }
-NEU_GRAD = {"light": ("#edf6f1", "#f7eef1"), "dark": ("#303237", "#26282c")}  # top left → bottom right
 
 
-def build_neu(light):
-    return {k: hexc(v) for k, v in NEU["light" if light else "dark"].items()}
+def pick_neu(seed, light):
+    """RYOCS theme for a cover colour (hue, saturation)."""
+    h, sat = seed
+    if sat < 0.15:
+        return "" if light else "grafit"
+
+    def dist(n):
+        ye = NEU_THEMES[n][1][6]
+        hh = colorsys.rgb_to_hls(*(int(ye[i:i + 2], 16) / 255 for i in (1, 3, 5)))[0]
+        return min(abs(hh - h), 1 - abs(hh - h))
+    # "dark" has the same accent as "orman", so it would hide Forest; grey dark covers get Graphite
+    return min((n for n, t in NEU_THEMES.items() if t[0] != light and n not in ("grafit", "dark")),
+               key=dist)
+
+
+def build_neu(light, seed=DEFAULT_SEED):
+    _d, (bg, hi, lo, tx, mu, ln, ye), cz = NEU_THEMES[pick_neu(seed, light)]
+    p = {k: hexc(v) for k, v in dict(
+        surface=bg, surface_high=bg, surface_highest=ln, secondary_container=bg,
+        on_secondary_container=tx, primary_container=ye, primary=ye, on_surface=tx,
+        on_surface_variant=mu, outline=mu, border=ln, hi=hi, lo=lo, cz=cz or "#e9ecf1").items()}
+    # text on the accent: white if it reaches 4.5:1, else the accent darkened (RYOCS --yeYazi)
+    L = _lum(p["primary"])
+    p["on_primary"] = p["on_primary_container"] = (255, 255, 255) if 1.05 / (L + 0.05) >= 4.5 \
+        else mix(p["primary"], (0, 0, 0), 0.72 if L > 0.35 else 0.85)
+    return p
+
+
+def _glass_crop(small, mon, x, y, w, h):
+    """Piece of the quarter-size blurred wallpaper behind screen rect (x, y, w, h), full size."""
+    rx, ry = (x - mon[0]) / 4, (y - mon[1]) / 4
+    return small.crop((round(rx), round(ry), round(rx + w / 4) + 1, round(ry + h / 4) + 1)).resize(
+        (w + 4, h + 4), Image.Resampling.BILINEAR).crop((0, 0, w, h))
 
 
 def mix(a, b, t):
     return tuple(int(round(a[i] + (b[i] - a[i]) * t)) for i in range(3))
 
 
+def _lum(c):
+    """WCAG relative luminance of an RGB colour."""
+    c = [x / 12.92 if x <= 0.03928 else ((x + 0.055) / 1.055) ** 2.4 for x in (v / 255 for v in c)]
+    return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
+
+
+def readable(fg, bg, toward, need=4.5):
+    """fg moved towards `toward` (the text colour) until small text has `need`:1 contrast on bg."""
+    lb = _lum(bg)
+    for i in range(11):
+        c = mix(fg, toward, i / 10)
+        lc = _lum(c)
+        if (max(lc, lb) + 0.05) / (min(lc, lb) + 0.05) >= need:
+            return c
+    return tuple(toward)
+
+
 def mix_scheme(a, b, t):
-    return {k: mix(a[k], b[k], t) for k in a}
+    return {k: mix(a[k], b[k], t) for k in a if k in b}   # neu has extra hi / lo keys
 
 
 # ------------------------------------------------------------------ drawing
@@ -1225,7 +1317,10 @@ def _rr_mask(w, h, fx0, fy0, fx1, fy1, r, ellipse=False):
 # Design language: "material" (Material You: big radii, tonal fills),
 # "shadcn" (shadcn/ui: neutral colors, thin borders, small corners) or "neu". In shadcn rr()
 # caps the corners and turns button-sized circles into rounded squares.
-STYLE = {"shad": False, "neu": False, "r": 0.0, "btn": 0.0}
+STYLE = {"shad": False, "neu": False, "r": 0.0, "btn": 0.0,
+         # neu: current theme shadow colours, RYOCS glass look (light + glass bg), translucent bg
+         "hi": (255, 255, 255), "lo": (197, 199, 204), "glass": False, "clear": False,
+         "surf": (233, 234, 236), "see": False}
 
 
 def set_style(name, S):
@@ -1266,74 +1361,118 @@ def rr(img, x0, y0, x1, y1, r, color, alpha=255, ellipse=False, plain=False):
 _neu_cache = {}
 
 
+def _neu_shadows(inset):
+    """(dx, dy, blur sigma, colour, alpha) like RYOCS --up-s / --in, or their glass versions."""
+    S = STYLE["btn"] / 30.0
+    if STYLE["glass"]:
+        return [(0, 2 * S, 3 * S, (50, 62, 90), 33)] if inset else \
+            [(0, 4 * S, 5 * S, (50, 62, 90), 66)]
+    d, b = (3 * S, 3.5 * S) if inset else (4 * S, 4.5 * S)   # CSS blur radius / 2 = sigma
+    return [(d, d, b, STYLE["lo"], 255), (-d, -d, b, STYLE["hi"], 255)]
+
+
 def neu_raise(img, x0, y0, x1, y1, r, ellipse=False):
     """Neumorphic soft shadow: light at top left, dark at bottom right. The shadow only lands on
     pixels already filled (opaque) in img; it never spills outside the card / into transparency."""
     from PIL import ImageChops, ImageFilter
     w, h = max(1, round(x1 - x0)), max(1, round(y1 - y0))
-    dd = max(2.0, min(w, h) * 0.09)
-    pad = int(dd * 3) + 1
-    key = (w, h, round(r), ellipse, round(dd, 1))
-    m = _neu_cache.get(key)
-    if m is None:
-        m = Image.new("L", (w + 2 * pad, h + 2 * pad), 0)
-        m.paste(_rr_mask(w, h, 0, 0, w, h, max(0.0, min(r, w / 2, h / 2)), ellipse), (pad, pad))
-        m = m.filter(ImageFilter.GaussianBlur(dd))
-        if len(_neu_cache) > 60:
-            _neu_cache.clear()
-        _neu_cache[key] = m
-    dark = sum(img.getpixel((min(img.width - 1, max(0, int(x0 + w / 2))),
-                             min(img.height - 1, max(0, int(y0 + h / 2)))))[:3]) < 300
-    for off, col, a in (((-dd, -dd), (255, 255, 255), 16 if dark else 235),
-                        ((dd, dd), (0, 0, 0) if dark else (150, 162, 178), 150 if dark else 120)):
-        px, py = round(x0 - pad + off[0]), round(y0 - pad + off[1])
+    for dx, dy, blur, col, a in _neu_shadows(False):
+        pad = int(max(abs(dx), abs(dy)) + blur * 3) + 1
+        key = (w, h, round(r), ellipse, round(blur, 1), pad)
+        m = _neu_cache.get(key)
+        if m is None:
+            m = Image.new("L", (w + 2 * pad, h + 2 * pad), 0)
+            m.paste(_rr_mask(w, h, 0, 0, w, h, max(0.0, min(r, w / 2, h / 2)), ellipse), (pad, pad))
+            m = m.filter(ImageFilter.GaussianBlur(blur))
+            if len(_neu_cache) > 60:
+                _neu_cache.clear()
+            _neu_cache[key] = m
+        px, py = round(x0 - pad + dx), round(y0 - pad + dy)
         bx0, by0 = max(0, px), max(0, py)
         bx1, by1 = min(img.width, px + m.width), min(img.height, py + m.height)
         if bx1 <= bx0 or by1 <= by0:
             continue
         sm = m.crop((bx0 - px, by0 - py, bx1 - px, by1 - py)).point(lambda v, a=a: v * a // 255)
         sm = ImageChops.multiply(sm, img.getchannel("A").crop((bx0, by0, bx1, by1)))
-        layer = Image.new("RGBA", sm.size, col + (255,))
+        layer = Image.new("RGBA", sm.size, tuple(col) + (255,))
         layer.putalpha(sm)
         img.alpha_composite(layer, (bx0, by0))
 
 
-def _grad(w, h, top, bot, diag=False):
-    """Vertical (diag: top left to bottom right) color gradient, RGBA."""
-    key = ("g", w, h, top, bot, diag)
-    g = _neu_cache.get(key)
-    if g is None:
-        from PIL import ImageChops
-        v = Image.linear_gradient("L").resize((w, h))
-        if diag:
-            hz = Image.linear_gradient("L").rotate(90).resize((w, h))  # 0 on the left, 255 on the right
-            v = ImageChops.add(v, hz, scale=2)
-        g = Image.composite(Image.new("RGBA", (w, h), tuple(bot) + (255,)),
-                            Image.new("RGBA", (w, h), tuple(top) + (255,)), v)
-        if len(_neu_cache) > 60:
-            _neu_cache.clear()
-        _neu_cache[key] = g
-    return g
-
-
-def grad_rr(img, x0, y0, x1, y1, r, top, bot, ellipse=False, diag=False):
-    """Gradient-filled rounded rectangle / circle (physical pixels)."""
+def _box(x0, y0, x1, y1, r, ellipse):
+    """Integer box and anti-aliased shape mask of a rounded rect / circle."""
     ix0, iy0 = int(math.floor(x0)), int(math.floor(y0))
     w, h = int(math.ceil(x1)) - ix0, int(math.ceil(y1)) - iy0
-    if w <= 0 or h <= 0:
+    rad = max(0.0, min(r, (x1 - x0) / 2, (y1 - y0) / 2))
+    m = _rr_mask(w, h, x0 - ix0, y0 - iy0, x1 - ix0, y1 - iy0, rad, ellipse) \
+        if w > 0 and h > 0 else None
+    return ix0, iy0, w, h, rad, m
+
+
+def neu_glass(img, x0, y0, x1, y1, r, ellipse=False):
+    """RYOCS glass sheen (--cam): white top-to-bottom gloss and a 1.5 px white inner edge."""
+    from PIL import ImageChops
+    ix0, iy0, w, h, rad, m = _box(x0, y0, x1, y1, r, ellipse)
+    if m is None:
         return
-    layer = _grad(w, h, tuple(top), tuple(bot), diag).copy()
-    layer.putalpha(_rr_mask(w, h, x0 - ix0, y0 - iy0, x1 - ix0, y1 - iy0,
-                            max(0.0, min(r, (x1 - x0) / 2, (y1 - y0) / 2)), ellipse))
+    col = Image.new("L", (1, h))
+    col.putdata([round(255 * (0.42 - 0.30 * t / 0.6 if t < 0.6 else 0.12 + 0.10 * (t - 0.6) / 0.4))
+                 for t in (i / max(1, h - 1) for i in range(h))])
+    sheen = ImageChops.multiply(col.resize((w, h)), m)
+    b = max(1.0, 1.5 * STYLE["btn"] / 30.0)
+    inner = _rr_mask(w, h, x0 - ix0 + b, y0 - iy0 + b, x1 - ix0 - b, y1 - iy0 - b,
+                     max(0.0, rad - b), ellipse)
+    sheen = ImageChops.lighter(sheen, ImageChops.subtract(m, inner).point(lambda v: v * 190 // 255))
+    layer = Image.new("RGBA", (w, h), (255, 255, 255, 255))
+    layer.putalpha(sheen)
     img.alpha_composite(layer, (ix0, iy0))
 
 
-def neu_btn(img, x0, y0, x1, y1, r, color, ellipse=False):
+def neu_btn(img, x0, y0, x1, y1, r, color, ellipse=False, pressed=False):
     """Soft UI button: card-colored body, raised by two soft shadows; no border.
-    color: body tone (hover / pressed tints are kept)."""
-    neu_raise(img, x0, y0, x1, y1, r, ellipse)
-    grad_rr(img, x0, y0, x1, y1, r, mix(color, (255, 255, 255), 0.06),
-            mix(color, (0, 0, 0), 0.04), ellipse)
+    pressed: sunk in like RYOCS :active (--in). On a glass / translucent card the body shows the
+    card through (RYOCS glass: transparent body + sheen) instead of an opaque disc."""
+    # accent-filled buttons (e.g. shuffle on) stay solid; card-coloured ones go see-through
+    see = (STYLE["glass"] or STYLE["clear"]) and max(abs(a - b) for a, b in zip(color, STYLE["surf"])) < 40
+    ix0, iy0, w, h, _rad, m = _box(x0, y0, x1, y1, r, ellipse)
+    under = img.crop((ix0, iy0, ix0 + w, iy0 + h)) if see and m is not None else None
+    if not pressed:
+        neu_raise(img, x0, y0, x1, y1, r, ellipse)
+    if under is None:
+        rr(img, x0, y0, x1, y1, r, color, ellipse=ellipse, plain=True)
+    else:
+        img.paste(under, (ix0, iy0), m)           # card back under the body, without shadow
+        rr(img, x0, y0, x1, y1, r, color, alpha=60, ellipse=ellipse, plain=True)
+        if STYLE["glass"]:
+            neu_glass(img, x0, y0, x1, y1, r, ellipse)
+    if pressed:
+        neu_inset(img, x0, y0, x1, y1, r, ellipse)
+
+
+def neu_inset(img, x0, y0, x1, y1, r, ellipse=False):
+    from PIL import ImageChops, ImageFilter
+    ix0, iy0, w, h, _rad, m = _box(x0, y0, x1, y1, r, ellipse)
+    if m is None:
+        return
+    for dx, dy, blur, col, a in _neu_shadows(True):   # lo on the top left inner edge, hi bottom right
+        pad = int(max(abs(dx), abs(dy)) + blur * 3) + 1
+        key = ("in", w, h, round(r), ellipse, round(blur, 1), pad, round(x0 % 1, 2), round(y0 % 1, 2),
+               round(x1 % 1, 2), round(y1 % 1, 2))
+        out = _neu_cache.get(key)
+        if out is None:
+            out = Image.new("L", (w + 2 * pad, h + 2 * pad), 255)
+            out.paste(ImageChops.invert(m), (pad, pad))
+            out = out.filter(ImageFilter.GaussianBlur(blur))
+            if len(_neu_cache) > 60:
+                _neu_cache.clear()
+            _neu_cache[key] = out
+        cx, cy = round(pad - dx), round(pad - dy)
+        sm = ImageChops.multiply(out.crop((cx, cy, cx + w, cy + h)), m)
+        if a < 255:
+            sm = sm.point(lambda v, a=a: v * a // 255)
+        layer = Image.new("RGBA", (w, h), tuple(col) + (255,))
+        layer.putalpha(sm)
+        img.alpha_composite(layer, (ix0, iy0))
 
 
 def rounded_image(src, size, radius):
@@ -1390,16 +1529,19 @@ def _fallback_order(text):
     return idx
 
 
-# bundled fonts (Geist, OFL-1.1: github.com/vercel/geist-font)
+# bundled fonts (OFL-1.1): Geist (github.com/vercel/geist-font) for shadcn, Poppins
+# (github.com/google/fonts ofl/poppins) for neu, at RYOCS's weights: text 300, emphasis 500
 BUNDLED_FONTS = os.path.join(getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__))),
                              "fonts")
 _GEIST = {"segoeui.ttf": "Geist-Regular.ttf", "seguisb.ttf": "Geist-SemiBold.ttf"}
+_POPPINS = {"segoeui.ttf": "Poppins-Light.ttf", "seguisb.ttf": "Poppins-Medium.ttf"}
 
 
 def ui_font(name):
-    """Font file for the selected design language (shadcn/ui: Geist, Material: Segoe UI)."""
-    if STYLE["shad"] and name in _GEIST:
-        p = os.path.join(BUNDLED_FONTS, _GEIST[name])
+    """Font file for the selected design language (shadcn/ui: Geist, neu: Poppins, Material: Segoe UI)."""
+    m = _GEIST if STYLE["shad"] else _POPPINS if STYLE["neu"] else {}
+    if name in m:
+        p = os.path.join(BUNDLED_FONTS, m[name])
         if os.path.exists(p):
             return p
     return name
@@ -1411,7 +1553,7 @@ class TextFont:
     def __init__(self, filename, px, scale, bold=False):
         self.size = max(6, round(px * scale))
         self.bold = bold
-        filename = ui_font(filename)  # Geist instead of Segoe in the shadcn theme
+        filename = ui_font(filename)  # Geist / Poppins instead of Segoe in shadcn / neu
         if not os.path.exists(os.path.join(FONT_DIR, filename)):
             filename = "segoeui.ttf"
         self.filename = filename
@@ -3047,10 +3189,14 @@ class App:
 
     def _scheme(self):
         if self.cfg.get("ui") == "shadcn":
-            # shadcn: neutral (black/white) if 'from cover' is selected, else the fixed color
+            # shadcn: 'from cover' = the shadcn colour theme nearest to the cover, else the fixed color
+            if self.cfg.get("accent") == "auto":
+                return build_shadcn(self.light, theme=pick_shadcn(self.seed))
             return build_shadcn(self.light, dict(ACCENTS).get(self.cfg.get("accent")))
-        if self.cfg.get("ui") == "neu":  # fixed slate palette: cover / accent color is not used
-            return build_neu(self.light)
+        if self.cfg.get("ui") == "neu":  # RYOCS theme nearest to the cover colour
+            p = build_neu(self.light, self.seed)
+            STYLE["hi"], STYLE["lo"] = p["hi"], p["lo"]
+            return p
         seed = dict(ACCENTS).get(self.cfg.get("accent"), self.seed)
         return build_scheme(seed, self.light)
 
@@ -3118,26 +3264,30 @@ class App:
             return None
         key = (wx, wy, self.WMAX, self.HMAX)
         if g.get("crop_key") != key:
-            rx, ry = (wx - mkey[0]) / 4, (wy - mkey[1]) / 4
-            g["crop"] = small.crop((round(rx), round(ry), round(rx + self.WMAX / 4) + 1,
-                                    round(ry + self.HMAX / 4) + 1)).resize(
-                (self.WMAX + 4, self.HMAX + 4), Image.Resampling.BILINEAR).crop(
-                (0, 0, self.WMAX, self.HMAX))
+            g["crop"] = _glass_crop(small, mkey, wx, wy, self.WMAX, self.HMAX)
             g["crop_key"] = key
         return g["crop"]
 
-    def _card(self, img, x0, y0, x1, y1, r):
+    def _glass_at(self, x, y, w, h):
+        """Blurred wallpaper behind a screen rect (physical px), e.g. the menu; None without one.
+        shortcut: uses the widget's monitor; a menu on another monitor gets the wrong piece."""
+        if self._glass_bg() is None:
+            return None
+        return _glass_crop(self._glass["small"], self._glass["mon"], x, y, w, h)
+
+    def _card(self, img, x0, y0, x1, y1, r, glass=None):
         """Card background (physical pixels) for the selected background style."""
         P, mode = self.pal, self.cfg["bg"]
+        STYLE["see"] = mode != "solid"   # shadcn: buttons on a glass / translucent card
         if STYLE["neu"]:
-            self._neu_card(img, x0, y0, x1, y1, r, mode)
+            self._neu_card(img, x0, y0, x1, y1, r, mode, glass)
             return
         if mode == "clear":
             rr(img, x0, y0, x1, y1, r, P["surface"], alpha=150)
             self._card_border(img, x0, y0, x1, y1, r)
             return
         if mode == "glass":
-            bg = self._glass_bg()
+            bg = self._glass_bg() if glass is None else glass
             if bg is not None:
                 ix0, iy0 = int(math.floor(x0)), int(math.floor(y0))
                 ix1, iy1 = int(math.ceil(x1)), int(math.ceil(y1))
@@ -3158,34 +3308,35 @@ class App:
             return
         rr(img, x0, y0, x1, y1, r, P["surface"])
 
-    def _neu_card(self, img, x0, y0, x1, y1, r, mode):
-        """Neumorphic card: pastel / charcoal diagonal gradient + thin light edge. Blends with the
-        wallpaper in glass mode and with transparency in translucent mode (the gradient stays)."""
-        from PIL import ImageChops
+    def _neu_card(self, img, x0, y0, x1, y1, r, mode, glass=None):
+        """Neumorphic card: flat RYOCS background. Glass: the wallpaper in the theme's glass tone
+        plus the RYOCS glass sheen (light only, as in RYOCS); translucent: see-through."""
         ix0, iy0 = int(math.floor(x0)), int(math.floor(y0))
         w, h = int(math.ceil(x1)) - ix0, int(math.ceil(y1)) - iy0
+        P = self.pal
+        STYLE["glass"], STYLE["clear"], STYLE["surf"] = False, mode == "clear", tuple(P["surface"])
         if w <= 0 or h <= 0:
             return
-        c0, c1 = (hexc(c) for c in NEU_GRAD["light" if self.light else "dark"])
-        layer = _grad(w, h, c0, c1, True).copy()
+        layer = Image.new("RGBA", (w, h), tuple(P["surface"]) + (255,))
         if mode == "glass":
-            bg = self._glass_bg()
+            bg = self._glass_bg() if glass is None else glass
             if bg is not None:
                 part = bg.crop((ix0, iy0, ix0 + w, iy0 + h)).convert("RGBA")
-                layer = Image.blend(part, layer, 0.5 if self.light else 0.58)
-        rad = max(0.0, min(r, (x1 - x0) / 2, (y1 - y0) / 2))
-        m = _rr_mask(w, h, x0 - ix0, y0 - iy0, x1 - ix0, y1 - iy0, rad)
+                if self.light:   # RYOCS glass: --bg is the glass tone with 30% white
+                    tone = mix(P.get("cz", P["surface"]), (255, 255, 255), 0.3)
+                    layer = Image.blend(part, Image.new("RGBA", (w, h), tone + (255,)), 0.45)
+                    STYLE["glass"] = True
+                else:
+                    layer = Image.blend(part, layer, 0.58)
+                    STYLE["clear"] = True   # dark glass: see-through buttons, no sheen (as in RYOCS)
+        m = _rr_mask(w, h, x0 - ix0, y0 - iy0, x1 - ix0, y1 - iy0,
+                     max(0.0, min(r, (x1 - x0) / 2, (y1 - y0) / 2)))
         if mode == "clear":
             m = m.point(lambda v: v * 150 // 255)
         layer.putalpha(m)
         img.alpha_composite(layer, (ix0, iy0))
-        b = max(1.0, round(self.S))
-        inner = _rr_mask(w, h, x0 - ix0 + b, y0 - iy0 + b, x1 - ix0 - b, y1 - iy0 - b,
-                         max(0.0, rad - b))
-        edge = Image.new("RGBA", (w, h), (255, 255, 255, 255))
-        edge.putalpha(ImageChops.subtract(m, inner).point(
-            lambda v: v * (200 if self.light else 22) // 255))
-        img.alpha_composite(edge, (ix0, iy0))
+        if STYLE["glass"]:
+            neu_glass(img, x0, y0, x1, y1, r)
 
     def _card_border(self, img, x0, y0, x1, y1, r):
         """In shadcn, glass / translucent cards get a thin border too (outline only)."""
@@ -4279,8 +4430,8 @@ class App:
                    fill=P["on_secondary_container"] + (255,), anchor="lm")
             hits.append(("open", cx0, 9, cx1, 31))
         else:
-            d.text((X(tx), X(20)), status, font=F["status"], fill=P["primary"] + (255,),
-                   anchor="lm")
+            d.text((X(tx), X(20)), status, font=F["status"],
+                   fill=readable(P["primary"], P["surface"], P["on_surface"]) + (255,), anchor="lm")
         y = 34
         for line in wrap_text(title, F["title"], tw, 2):
             d.text((X(tx), X(y)), line, font=F["title"], fill=P["on_surface"] + (255,))
@@ -4338,9 +4489,20 @@ class App:
             col = P["secondary_container"]
             if hov == hid:
                 col = mix(col, P["on_secondary_container"], 0.10)
-            if self.pressed == hid:
-                col = mix(col, P["on_secondary_container"], 0.16)
-            rr(img, X(bx - 26), X(cy - 26), X(bx + 26), X(cy + 26), 0, col, ellipse=True)
+            if STYLE["neu"]:
+                neu_btn(img, X(bx - 26), X(cy - 26), X(bx + 26), X(cy + 26), 0, col, ellipse=True,
+                        pressed=self.pressed == hid)
+            else:
+                if self.pressed == hid:
+                    col = mix(col, P["on_secondary_container"], 0.16)
+                if STYLE["shad"] and STYLE["see"]:  # glassy shadcn: border + bg-secondary/60
+                    rr(img, X(bx - 26), X(cy - 26), X(bx + 26), X(cy + 26), 0, P["border"],
+                       alpha=200, ellipse=True)
+                    b = max(1.0, round(self.S))
+                    rr(img, X(bx - 26) + b, X(cy - 26) + b, X(bx + 26) - b, X(cy + 26) - b, 0, col,
+                       alpha=150, ellipse=True)
+                else:
+                    rr(img, X(bx - 26), X(cy - 26), X(bx + 26), X(cy + 26), 0, col, ellipse=True)
             icon(bx, cy, glyph, 19, P["on_secondary_container"])
             hits.append((hid, bx - 26, cy - 26, bx + 26, cy + 26))
         # play / pause (primary, shape-morphing)
@@ -4352,9 +4514,9 @@ class App:
             col = mix(col, P["on_primary"], 0.18)
         if STYLE["neu"]:
             neu_btn(img, X(CX - pw / 2), X(cy - ph / 2), X(CX + pw / 2), X(cy + ph / 2),
-                      X(self.play_r), mix(P["secondary_container"], P["on_surface"],
-                                       0.1 if self.pressed == "play" else
-                                       0.06 if hov == "play" else 0))
+                    X(self.play_r), mix(P["secondary_container"], P["on_surface"],
+                                        0.06 if hov == "play" else 0),
+                    pressed=self.pressed == "play")
         else:
             rr(img, X(CX - pw / 2), X(cy - ph / 2), X(CX + pw / 2), X(cy + ph / 2),
                X(self.play_r), col)
@@ -4618,7 +4780,8 @@ class App:
         # top lists: artists / tracks / hours
         hy = top + 182
         d.text((X(20), X(hy)), T({"artists": "st_top_a", "tracks": "st_top_t"}.get(
-            lst, "st_hours")), font=F["status"], fill=P["primary"] + (255,), anchor="lm")
+            lst, "st_hours")), font=F["status"],
+            fill=readable(P["primary"], P["surface"], P["on_surface"]) + (255,), anchor="lm")
         x = W - 16
         for key in ("hours", "tracks", "artists"):
             lbl = T("sl_" + key)
@@ -5180,8 +5343,8 @@ class Toast:
             d.text((X(44), X(44)), IC_MUSIC, font=app.icon_font(26),
                    fill=P["on_surface_variant"] + (255,), anchor="mm")
         tw = X(self.TW - 88 - 18)
-        d.text((X(88), X(24)), T("playing"), font=F["status"], fill=P["primary"] + (255,),
-               anchor="lm")
+        d.text((X(88), X(24)), T("playing"), font=F["status"],
+               fill=readable(P["primary"], P["surface"], P["on_surface"]) + (255,), anchor="lm")
         d.text((X(88), X(45)), fit_text(st.get("title") or T("unknown"), F["mtitle"], tw),
                font=F["mtitle"], fill=P["on_surface"] + (255,), anchor="lm")
         d.text((X(88), X(65)), fit_text(st.get("artist") or "", F["album"], tw),
@@ -5318,7 +5481,7 @@ class Toast:
 # ------------------------------------------------------------------ right-click menu
 MI_BACK, MI_CHEV, MI_CHECK = "", "", ""
 MI = {"search": "", "mini": "", "lock": "", "share": "",
-      "open": "", "look": "", "alpha": "", "widget": "",
+      "open": "", "look": "", "widget": "",
       "notif": "", "sleep": "", "alarm": "", "device": "",
       "account": "", "lang": "", "close": "", "import": "",
       "link": "", "image": "", "auto": ""}
@@ -5330,8 +5493,8 @@ class MenuPanel:
     _inst = None
     PW = 300          # panel width (logical px)
     M = 14            # shadow margin
-    HEIGHTS = {"quick": 80, "sep": 9, "nav": 40, "toggle": 40, "action": 40, "radio": 38,
-               "seg": 66, "swatch": 66, "info": 24, "header": 30, "title": 50}
+    HEIGHTS = {"quick": 66, "sep": 9, "nav": 34, "toggle": 36, "action": 34, "radio": 34,
+               "seg": 64, "swatch": 64, "info": 22, "header": 26, "title": 46}
 
     @classmethod
     def toggle(cls, app, x, y):
@@ -5547,37 +5710,36 @@ class MenuPanel:
                      lambda: self._open_page("share")),
                     ("q_open", MI["open"], T("q_open"), False,
                      self._then_close(open_spotify))]},
-                {"t": "sep"},
+                {"t": "header", "label": T("mh_custom")},
                 {"t": "nav", "id": "p_look", "icon": MI["look"], "label": T("mn_appearance"),
-                 "value": th.get(c["theme"], ""), "page": "look"},
-                {"t": "nav", "id": "p_alpha", "icon": MI["alpha"], "label": T("mn_transparency"),
-                 "value": f'%{c["opacity"]}', "page": "alpha"},
+                 "value": th.get(c["theme"], "") + (f' · %{c["opacity"]}' if c["opacity"] < 100
+                                                    else ""), "page": "look"},
                 {"t": "nav", "id": "p_widget", "icon": MI["widget"], "label": T("mn_widget"),
                  "value": "", "page": "widget"},
-                {"t": "sep"},
-                {"t": "nav", "id": "p_notif", "icon": MI["notif"], "label": T("mn_notif"),
-                 "value": "", "page": "notif"},
+                {"t": "header", "label": T("mh_play")},
                 {"t": "nav", "id": "p_sleep", "icon": MI["sleep"], "label": T("m_sleep"),
                  "value": T("sleep_left", m=mins) if mins else T("off"), "page": "sleep"},
                 {"t": "nav", "id": "p_alarm", "icon": MI["alarm"], "label": T("m_alarm"),
                  "value": al.get("time", "08:00") if al.get("on") else T("off"), "page": "alarm"},
-                {"t": "sep"},
                 {"t": "nav", "id": "p_dev", "icon": MI["device"], "label": T("m_devices"),
                  "value": "", "page": "devices"},
-                {"t": "action", "id": "a_hist", "icon": "", "label": T("hs_menu"),
+                {"t": "action", "id": "a_hist", "icon": "\ue81c", "label": T("hs_menu"),
                  "do": self._then_close(lambda: HistoryDialog(app))},
+                {"t": "header", "label": T("mh_app")},
+                {"t": "nav", "id": "p_notif", "icon": MI["notif"], "label": T("mn_notif"),
+                 "value": "", "page": "notif"},
                 {"t": "nav", "id": "p_acc", "icon": MI["account"], "label": T("mn_account"),
                  "value": T("acc_on") if app.web.connected else T("acc_off"), "page": "account"},
                 {"t": "nav", "id": "p_lang", "icon": MI["lang"], "label": T("mn_language"),
                  "value": "Türkçe" if LANG == "tr" else "English", "page": "lang"},
                 {"t": "sep"},
-                {"t": "action", "id": "a_close", "icon": MI["close"], "label": T("m_close"),
-                 "do": self._then_close(app.root.destroy)},
             ] + ([{"t": "action", "id": "a_upd", "icon": MI["open"],
                    "label": T("upd_new", v=app.update_tag),
                    "do": self._then_close(lambda: webbrowser.open(RELEASES_URL))}]
-                 if app.update_tag else [{"t": "info", "label": f"Coverglow {APP_VERSION}"}])
-        title = {"look": T("mn_appearance"), "alpha": T("mn_transparency"),
+                 if app.update_tag else []) + [
+                {"t": "action", "id": "a_close", "icon": MI["close"], "label": T("m_close"),
+                 "value": f"v{APP_VERSION}", "do": self._then_close(app.root.destroy)}]
+        title = {"look": T("mn_appearance"),
                  "widget": T("mn_widget"), "notif": T("mn_notif"), "sleep": T("m_sleep"),
                  "alarm": T("m_alarm"), "devices": T("m_devices"), "account": T("mn_account"),
                  "lang": T("mn_language"), "share": T("mn_share")}[page]
@@ -5602,9 +5764,7 @@ class MenuPanel:
                  "value": min(SIZES, key=lambda kv: abs(kv[1] - float(c["scale"])))[1],
                  "options": [(v, T(k)) for k, v in SIZES], "set": app._set_scale},
                 {"t": "info", "label": T("size_hint")},
-            ]
-        elif page == "alpha":
-            out += [
+                {"t": "header", "label": T("mn_transparency")},
                 {"t": "seg", "id": "s_op", "label": T("m_opacity"), "value": c["opacity"],
                  "options": [(v, f"%{v}") for v in (100, 90, 80, 70, 60)],
                  "set": app._set_opacity},
@@ -5717,6 +5877,27 @@ class MenuPanel:
         return out
 
     # -- drawing
+    def _slide_pos(self, iid, tgt):
+        """Selected segment position (index units) and whether it is still moving: slides from
+        the old choice with a small overshoot, like RYOCS cubic-bezier(.3, 1.35, .5, 1) .42 s."""
+        sl = self.__dict__.setdefault("_slides", {})
+        now = time.monotonic()
+        st = sl.get(iid)
+        if st is None:
+            sl[iid] = st = (tgt, tgt, now - 1)
+        elif st[1] != tgt:
+            sl[iid] = st = (self._slide_pos(iid, st[1])[0], tgt, now)
+        f, to, t0 = st
+        k = (now - t0) / 0.42
+        if k >= 1:
+            return to, False
+        e = 1 + 2.2 * (k - 1) ** 3 + 1.2 * (k - 1) ** 2   # ease-out-back
+        return f + (to - f) * e, True
+
+    def _slide_frame(self):
+        self._slide_job = None
+        self.render()
+
     def render(self, place=False):
         if self._closing:
             return
@@ -5732,8 +5913,10 @@ class MenuPanel:
         d = Drawer(content)
         hits = []
         hov = self.hover
+        animate = False
+        glass = app.cfg["bg"] == "glass"
         on, var, pri = P["on_surface"] + (255,), P["on_surface_variant"] + (255,), \
-            P["primary"] + (255,)
+            readable(P["primary"], P["surface_high"], P["on_surface"]) + (255,)
         y = 8
         for it in items:
             h = self.HEIGHTS[it["t"]]
@@ -5750,11 +5933,11 @@ class MenuPanel:
                     col = P["primary_container"] if active else P["surface_highest"]
                     if hov == bid:
                         col = mix(col, P["on_surface"], 0.10)
-                    rr(content, X(cx - 22), X(y + 8), X(cx + 22), X(y + 52), X(16), col)
-                    d.text((X(cx), X(y + 30)), glyph, font=self.icon(17),
+                    rr(content, X(cx - 20), X(y + 6), X(cx + 20), X(y + 42), X(14), col)
+                    d.text((X(cx), X(y + 24)), glyph, font=self.icon(16),
                            fill=(P["on_primary_container"] if active else P["on_surface"])
                            + (255,), anchor="mm")
-                    d.text((X(cx), X(y + 66)), lbl, font=F["tiny"], fill=var, anchor="mm")
+                    d.text((X(cx), X(y + 54)), lbl, font=F["tiny"], fill=var, anchor="mm")
                     hits.append((bid, cx - bw / 2, y, cx + bw / 2, y + h, _fn))
             elif t == "sep":
                 rr(content, X(16), X(y + 4), X(PW - 16), X(y + 5), 0, P["on_surface"], alpha=24)
@@ -5767,7 +5950,7 @@ class MenuPanel:
                 d.text((X(52), X(y + 25)), it["label"], font=F["title"], fill=on, anchor="lm")
                 hits.append((bh, 0, y, PW, y + h, self._go_back))
             elif t == "header":
-                d.text((X(18), X(y + 18)), it["label"], font=F["head"], fill=pri, anchor="lm")
+                d.text((X(18), X(y + h / 2 + 3)), it["label"], font=F["head"], fill=pri, anchor="lm")
             elif t == "info":
                 d.text((X(18), X(y + h / 2)), fit_text(it["label"], F["value"], X(PW - 120)
                                                        if it.get("value") else X(PW - 36)),
@@ -5791,6 +5974,10 @@ class MenuPanel:
                         d.text((X(PW - right), X(y + h / 2)), it["value"], font=F["value"],
                                fill=var, anchor="rm")
                         right += F["value"].getlength(it["value"]) / S + 8
+                elif t == "action" and it.get("value"):
+                    d.text((X(PW - 18), X(y + h / 2)), it["value"], font=F["tiny"], fill=var,
+                           anchor="rm")
+                    right = F["tiny"].getlength(it["value"]) / S + 22
                 elif t == "toggle":
                     self._switch(content, PW - 54, y + h / 2, it["on"], dis, P, S)
                     right = 64
@@ -5821,28 +6008,42 @@ class MenuPanel:
                        fill=var if not dis else P["outline"] + (255,), anchor="lm")
                 opts = it["options"]
                 x0, x1, sy0, sy1 = 14, PW - 14, y + 26, y + 58
-                rr(content, X(x0), X(sy0), X(x1), X(sy1), X(16), P["outline"], alpha=110)
-                rr(content, X(x0 + 1), X(sy0 + 1), X(x1 - 1), X(sy1 - 1), X(15), P["surface_high"])
+                if STYLE["neu"]:   # RYOCS glass: .seg background white 30%
+                    rr(content, X(x0), X(sy0), X(x1), X(sy1), X(16),
+                       *(((255, 255, 255), 77) if glass and app.light else (P["surface_high"], 255)))
+                    neu_inset(content, X(x0), X(sy0), X(x1), X(sy1), X(16))
+                else:
+                    rr(content, X(x0), X(sy0), X(x1), X(sy1), X(16), P["outline"], alpha=110)
+                    rr(content, X(x0 + 1), X(sy0 + 1), X(x1 - 1), X(sy1 - 1), X(15),
+                       P["surface_high"], alpha=150 if glass else 255)
                 sw = (x1 - x0) / len(opts)
+                # selected background slides from the previous choice (RYOCS .seg::before)
+                tgt = next((i for i, (v, _l) in enumerate(opts) if v == it["value"]), None)
+                if tgt is not None:
+                    pos, moving = self._slide_pos(iid, tgt)
+                    animate |= moving
+                    sx0 = x0 + pos * sw
+                    if STYLE["neu"]:
+                        neu_btn(content, X(sx0 + 4), X(sy0 + 4), X(sx0 + sw - 4), X(sy1 - 4), X(12),
+                                mix(P["surface"], (255, 255, 255), 0.7) if app.light
+                                else P.get("hi", P["surface_highest"]))
+                    elif STYLE["shad"]:  # shadcn Tabs: background color + thin border
+                        rr(content, X(sx0 + 3), X(sy0 + 3), X(sx0 + sw - 3), X(sy1 - 3),
+                           X(13), P["border"])
+                        rr(content, X(sx0 + 3) + 1, X(sy0 + 3) + 1, X(sx0 + sw - 3) - 1,
+                           X(sy1 - 3) - 1, X(13), P["surface"])
+                    else:
+                        rr(content, X(sx0 + 3), X(sy0 + 3), X(sx0 + sw - 3), X(sy1 - 3),
+                           X(13), P["secondary_container"])
                 for i, (val, lbl) in enumerate(opts):
                     sx0 = x0 + i * sw
                     sel = val == it["value"]
                     sid = f'{iid}:{i}'
-                    if sel:
-                        # shadcn Tabs: selected tab in background color + thin border
-                        if STYLE["shad"]:
-                            rr(content, X(sx0 + 3), X(sy0 + 3), X(sx0 + sw - 3), X(sy1 - 3),
-                               X(13), P["border"])
-                            rr(content, X(sx0 + 3) + 1, X(sy0 + 3) + 1, X(sx0 + sw - 3) - 1,
-                               X(sy1 - 3) - 1, X(13), P["surface"])
-                        else:
-                            rr(content, X(sx0 + 3), X(sy0 + 3), X(sx0 + sw - 3), X(sy1 - 3),
-                               X(13), P["secondary_container"])
-                    elif hov == sid and not dis:
+                    if not sel and hov == sid and not dis:
                         rr(content, X(sx0 + 3), X(sy0 + 3), X(sx0 + sw - 3), X(sy1 - 3), X(13),
                            P["on_surface"], alpha=20)
                     col = (P["on_secondary_container"] if sel else
-                           (P["on_surface_variant"] if STYLE["shad"] else P["on_surface"])) \
+                           (P["on_surface_variant"] if STYLE["shad"] or STYLE["neu"] else P["on_surface"])) \
                         if not dis else P["outline"]
                     d.text((X(sx0 + sw / 2), X((sy0 + sy1) / 2)),
                            fit_text(lbl, F["segb" if sel else "seg"], X(sw - 8)),
@@ -5879,17 +6080,23 @@ class MenuPanel:
                     hits.append((sid, cx - sw / 2, y + 26, cx + sw / 2, y + 62,
                                  (lambda s=it["set"], v=val: s(v))))
             y += h
+        if animate and not getattr(self, "_slide_job", None):
+            self._slide_job = self.top.after(16, self._slide_frame)
 
         # place in the window: shadow + card + content
-        sk = (vh, P["surface_high"])
+        pos = self._place(vh, place)
+        sk = (vh, P["surface_high"], STYLE["shad"], STYLE["neu"], glass and tuple(pos))
         if getattr(self, "_bg_key", None) != sk:  # shadow + card background (when the height changes)
+            gl = app._glass_at(pos[0], pos[1], self.WM, self.HM) if glass else None
             from PIL import ImageFilter
             bg = Image.new("RGBA", (self.WM, self.HM), (0, 0, 0, 0))
             shadow = Image.new("RGBA", (round(X(PW + 2 * M)), round(X(vh + 2 * M))),
                                (0, 0, 0, 0))
             rr(shadow, X(M), X(M + 3), X(M + PW), X(M + vh + 3), X(18), (0, 0, 0), alpha=110)
             bg.alpha_composite(shadow.filter(ImageFilter.GaussianBlur(X(7))))
-            if STYLE["shad"]:  # shadcn popover: border + flat fill
+            if gl is not None:  # glass: the widget's glass card style, wallpaper behind the menu
+                app._card(bg, X(M), X(M), X(M + PW), X(M + vh), X(18), glass=gl)
+            elif STYLE["shad"]:  # shadcn popover: border + flat fill
                 rr(bg, X(M), X(M), X(M + PW), X(M + vh), X(18), P["border"])
                 rr(bg, X(M) + 1, X(M) + 1, X(M + PW) - 1, X(M + vh) - 1, X(18), P["surface"])
             else:
@@ -5909,12 +6116,20 @@ class MenuPanel:
                X(1.5), P["on_surface"], alpha=70)
         self.hits = hits
         self.vh = vh
-        self.surface.full(canvas, pos=self._place(vh, place))
+        self.surface.full(canvas, pos=pos)
 
     @staticmethod
     def _switch(img, x, cy, on, dis, P, S):
         X = lambda v: v * S  # noqa: E731
         w, h = 40, 24
+        if STYLE["neu"]:
+            rr(img, X(x), X(cy - h / 2), X(x + w), X(cy + h / 2), X(h / 2), P["surface_high"])
+            neu_inset(img, X(x), X(cy - h / 2), X(x + w), X(cy + h / 2), X(h / 2))
+            r, cx = 8, (x + w - h / 2 if on else x + h / 2)
+            rr(img, X(cx - r), X(cy - r), X(cx + r), X(cy + r), 0,
+               P["outline"] if dis else P["primary"] if on else P["on_surface_variant"],
+               ellipse=True, plain=True)
+            return
         if on:
             rr(img, X(x), X(cy - h / 2), X(x + w), X(cy + h / 2), X(h / 2),
                P["primary"] if not dis else P["outline"])
@@ -6025,7 +6240,7 @@ _PRIVATE_FONTS = set()
 
 
 def load_private_fonts():
-    """Register the bundled fonts (Geist) with Windows for this process only,
+    """Register the bundled fonts (Geist, Poppins) with Windows for this process only,
     so tk windows can use them too."""
     try:
         for f in os.listdir(BUNDLED_FONTS):
@@ -6096,7 +6311,7 @@ class PillButton(tk.Label):
             col = mix(base, fg, k) if (fill is not None or k) else None
             if neu:
                 img.paste(tuple(dlg.Pbg) + (255,), (0, 0) + img.size)
-                neu_btn(img, sh, sh, sh + w, sh + h, r, col)
+                neu_btn(img, sh, sh, sh + w, sh + h, r, mix(base, fg, min(k, 0.08)), pressed=k > 0.1)
             elif border is not None:
                 rr(img, 0, 0, w, h, r, border)
                 rr(img, 1, 1, w - 1, h - 1, r - 1, col or base)
@@ -6149,9 +6364,12 @@ class _Dialog:
         self.field = _hx(P["surface_highest"] if not shad else P["surface_high"])
         self.line = _hx(P.get("border", P["outline"]) if shad else P["surface_highest"])
         load_private_fonts()
-        geist = shad and "Geist-Regular.ttf" in _PRIVATE_FONTS
-        self.ff, self.ffb = ("Geist", "Geist SemiBold") if geist else ("Segoe UI",
-                                                                         "Segoe UI Semibold")
+        if shad and "Geist-Regular.ttf" in _PRIVATE_FONTS:
+            self.ff, self.ffb = "Geist", "Geist SemiBold"
+        elif STYLE["neu"] and "Poppins-Light.ttf" in _PRIVATE_FONTS:
+            self.ff, self.ffb = "Poppins Light", "Poppins Medium"
+        else:
+            self.ff, self.ffb = "Segoe UI", "Segoe UI Semibold"
         t = self.top = tk.Toplevel(app.root)
         _Dialog._open[type(self).__name__] = t
         t.title(title)

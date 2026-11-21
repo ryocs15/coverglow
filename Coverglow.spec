@@ -14,6 +14,8 @@ a = Analysis(
     binaries=binaries,
     datas=[('fonts/Geist-Regular.ttf', 'fonts'), ('fonts/Geist-SemiBold.ttf', 'fonts'),
            ('fonts/Geist-Medium.ttf', 'fonts'), ('fonts/Geist-OFL.txt', 'fonts'),
+           ('fonts/Poppins-Light.ttf', 'fonts'), ('fonts/Poppins-Medium.ttf', 'fonts'),
+           ('fonts/Poppins-OFL.txt', 'fonts'),
            ('icon.ico', '.')],
     hiddenimports=hiddenimports,
     hookspath=[],
