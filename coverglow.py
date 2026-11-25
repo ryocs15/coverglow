@@ -2943,6 +2943,9 @@ class App:
             return
         self.vol_val = self.volume.set(round((v + delta) * 100) / 100)
         self.vol_until = time.monotonic() + 1.5
+        # the user set it on purpose: don't let the Discord duck restore undo it
+        self._duck_fade = None
+        self._duck and self._duck.update(orig=None)
 
     # ---------------- sleep timer
     def _set_sleep(self, minutes):
@@ -4294,7 +4297,7 @@ class App:
         d, self._duck = self._duck, None
         cur = self.volume.get()
         # only a raise means the user changed it; lower (e.g. Discord's own attenuation) still restores
-        if cur is not None and cur < d["low"] + 0.03:
+        if cur is not None and d["orig"] is not None and cur < d["low"] + 0.03:
             self._duck_fade = {"from": cur, "to": d["orig"], "t0": time.monotonic()}
         else:
             self._vol_mark(None)

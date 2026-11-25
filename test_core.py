@@ -263,6 +263,11 @@ def test_duck_never_ratchets_the_volume_down():
     vol.v *= 0.2                  # Discord's own attenuation lowers it further
     vol.talk = 0.0; tick(t0 + 1.3); tick(time.monotonic() + 1.0)
     assert abs(vol.v - 0.8) < 1e-6 and "vol_restore" not in cfg, vol.v
+    vol.talk = 0.5; tick(t0)      # ducked to 0.24, user turns it down with the volume key
+    app.vol_val = app.vol_until = None
+    s.App._change_volume(app, -0.14)
+    vol.talk = 0.0; tick(t0 + 1.3); tick(time.monotonic() + 1.0)
+    assert abs(vol.v - 0.1) < 1e-6 and "vol_restore" not in cfg, vol.v
 
 
 if __name__ == "__main__":
