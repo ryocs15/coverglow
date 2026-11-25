@@ -4278,6 +4278,8 @@ class App:
         if talking:
             if self._duck is None and st.get("ok"):
                 v = self.volume.get()
+                # talk resumed mid-restore: the real volume is the fade's target, not the half-way one
+                v = self._duck_fade["to"] if self._duck_fade else v
                 if v is not None and v > 0.02:
                     self._duck_fade = None
                     self._duck = {"orig": v, "low": v * 0.3, "last": now}
@@ -4291,8 +4293,8 @@ class App:
     def _duck_restore(self):
         d, self._duck = self._duck, None
         cur = self.volume.get()
-        # if the user changed the volume meanwhile, leave it alone
-        if cur is not None and abs(cur - d["low"]) < 0.03:
+        # only a raise means the user changed it; lower (e.g. Discord's own attenuation) still restores
+        if cur is not None and cur < d["low"] + 0.03:
             self._duck_fade = {"from": cur, "to": d["orig"], "t0": time.monotonic()}
         else:
             self._vol_mark(None)

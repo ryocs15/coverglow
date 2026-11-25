@@ -244,6 +244,27 @@ def test_version_compare_and_installer_in_sync():
     assert f'#define AppVersion "{s.APP_VERSION}"' in iss, "bump AppVersion in Coverglow.iss"
 
 
+def test_duck_never_ratchets_the_volume_down():
+    vol = SimpleNamespace(v=0.8, talk=0.0)
+    vol.get, vol.set = (lambda: vol.v), (lambda x: setattr(vol, "v", x))
+    vol.peak = lambda names: vol.talk
+    cfg = type("C", (dict,), {"save": lambda self: None})(react=False, duck=True, duck_apps=["discord.exe"])
+    app = SimpleNamespace(cfg=cfg, volume=vol, _vol_pending=None, level=0.0, _lvl_lo=None,
+                          _duck=None, _duck_fade=None, sleep_fade=None, _alarm_fade=None)
+    app._vol_mark = lambda v: s.App._vol_mark(app, v)
+    app._duck_restore = lambda: s.App._duck_restore(app)
+    tick = lambda now: s.App._audio_tick(app, now, {"ok": True}, True)
+    t0 = time.monotonic()
+    for _ in range(5):            # talk resumes halfway through every restore fade
+        vol.talk = 0.5; tick(t0)
+        vol.talk = 0.0; tick(t0 + 1.3); tick(t0 + 1.3 + 0.4)
+        t0 = time.monotonic()
+    vol.talk = 0.5; tick(t0)
+    vol.v *= 0.2                  # Discord's own attenuation lowers it further
+    vol.talk = 0.0; tick(t0 + 1.3); tick(time.monotonic() + 1.0)
+    assert abs(vol.v - 0.8) < 1e-6 and "vol_restore" not in cfg, vol.v
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):
